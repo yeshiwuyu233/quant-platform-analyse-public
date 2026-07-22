@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 — 量化分析系统</title>
+    <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet">
+    <style>
+        [data-bs-theme="dark"] {
+            --bs-body-bg: #2c2f36;
+            --bs-body-color: #d0d0d0;
+        }
+        html, body { height: 100%; }
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-box {
+            width: 400px;
+            max-width: 90vw;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 8px;
+        }
+        .step-dot {
+            width: 30px;
+            height: 4px;
+            border-radius: 2px;
+            background: #444;
+            transition: background 0.3s;
+        }
+        .step-dot.active { background: #0d6efd; }
+        .step-dot.done { background: #198754; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="card border-light p-4">
+            <div class="text-center mb-3">
+                <div style="font-size:36px;">📝</div>
+                <h4 class="text-white mt-2">注册新账号</h4>
+                <p class="text-muted small">
+                    {% if step == "invite" %}请输入邀请码{% elif step == "send_code" %}请输入邮箱{% elif step == "verify" %}验证邮箱并设置密码{% elif step == "done" %}注册完成{% endif %}
+                </p>
+            </div>
+
+            {% if error %}
+            <div class="alert alert-danger py-2 small">{{ error }}</div>
+            {% endif %}
+            {% if hint %}
+            <div class="alert alert-info py-2 small">{{ hint }}</div>
+            {% endif %}
+
+            <!-- Step 进度条 -->
+            <div class="step-indicator">
+                <div class="step-dot {% if step in ('invite',) %}active{% elif step not in ('invite',) %}done{% endif %}"></div>
+                <div class="step-dot {% if step in ('send_code',) %}active{% elif step in ('verify','done') %}done{% endif %}"></div>
+                <div class="step-dot {% if step in ('verify',) %}active{% elif step in ('done',) %}done{% endif %}"></div>
+            </div>
+
+            <!-- Step 1: 邀请码 -->
+            <form method="POST" id="regForm" {% if step == "invite" %}class="d-block"{% else %}class="d-none"{% endif %}>
+                <input type="hidden" name="_step" value="invite">
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">邀请码</label>
+                    <input name="invite_code" type="text" class="form-control" required autofocus placeholder="输入邀请码">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">下一步</button>
+                <div class="text-center mt-2">
+                    <a href="/login" class="text-muted small">← 返回登录</a>
+                </div>
+            </form>
+
+            <!-- Step 2: 邮箱 + 发送验证码 -->
+            <form method="POST" id="emailForm" {% if step == "send_code" %}class="d-block"{% else %}class="d-none"{% endif %}>
+                <input type="hidden" name="_step" value="send_code">
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">邮箱</label>
+                    <input name="email" type="email" class="form-control" required autofocus
+                           value="{{ email or '' }}" placeholder="example@qq.com">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">发送验证码</button>
+                <div class="text-center mt-2">
+                    <a href="/register" class="text-muted small">← 上一步</a>
+                </div>
+            </form>
+
+            <!-- Step 3: 验证码 + 密码 -->
+            <form method="POST" id="verifyForm" {% if step == "verify" %}class="d-block"{% else %}class="d-none"{% endif %}>
+                <input type="hidden" name="_step" value="verify">
+                <input type="hidden" name="email" value="{{ email or '' }}">
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">验证码</label>
+                    <input name="code" type="text" class="form-control" required autofocus
+                           placeholder="6 位数字验证码" maxlength="6" inputmode="numeric">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-secondary">设置密码</label>
+                    <input name="password" type="password" class="form-control" required
+                           placeholder="至少 6 位" minlength="6">
+                </div>
+                <button type="submit" class="btn btn-success w-100">完成注册</button>
+                <div class="text-center mt-2">
+                    <a href="/register" class="text-muted small">← 重新开始</a>
+                </div>
+            </form>
+
+            <!-- Step 4: 完成 -->
+            {% if step == "done" %}
+            <div class="text-center">
+                <div style="font-size:48px;">✅</div>
+                <h5 class="text-white mt-3">注册成功！</h5>
+                <p class="text-muted">
+                    用户名：<strong>{{ username }}</strong>
+                </p>
+                <p class="text-muted small">3 秒后自动跳转登录页...</p>
+                <a href="/login" class="btn btn-primary w-100">立即登录</a>
+            </div>
+            <script>
+            setTimeout(function(){ window.location.href='/login?registered=1'; }, 3000);
+            </script>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

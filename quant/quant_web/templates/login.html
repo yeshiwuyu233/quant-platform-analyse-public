@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 — 量化分析系统</title>
+    <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet">
+    <style>
+        /* ── 覆盖暗黑主题背景色，使用更亮的深色 ── */
+        [data-bs-theme="dark"] {
+            --bs-body-bg: #2c2f36;
+            --bs-body-color: #d0d0d0;
+        }
+        html, body { height: 100%; }
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-box {
+            width: 380px;
+            max-width: 90vw;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="card border-light p-4">
+            <div class="text-center mb-3">
+                <div style="font-size:36px;">📊</div>
+                <h4 class="text-white mt-2">量化分析系统</h4>
+                <p class="text-muted small">请输入账号密码登录</p>
+            </div>
+
+            {% if error %}
+            <div class="alert alert-danger py-2 small">{{ error }}</div>
+            {% endif %}
+            {% if success %}
+            <div class="alert alert-success py-2 small">{{ success }}</div>
+            {% endif %}
+
+            <form method="POST" id="loginForm" autocomplete="on">
+
+                <div class="mb-3">
+                    <label class="form-label small text-secondary" for="username">用户名</label>
+                    <input name="username" id="username" type="text" class="form-control" required autofocus
+                           autocomplete="username" placeholder="输入用户名">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small text-secondary" for="password">密码</label>
+                    <input name="password" id="password" type="password" class="form-control" required
+                           autocomplete="current-password" placeholder="输入密码">
+                </div>
+
+                <!-- 指纹采集字段（移到密码框后面，避免干扰自动填充） -->
+                <div style="display:none">
+                <input type="hidden" name="_screen" id="_screen" value="">
+                <input type="hidden" name="_tz" id="_tz" value="">
+                <input type="hidden" name="_platform" id="_platform" value="">
+                <input type="hidden" name="_lang" id="_lang" value="">
+                <input type="hidden" name="_cores" id="_cores" value="">
+                <input type="hidden" name="_memory" id="_memory" value="">
+                <input type="hidden" name="_brands" id="_brands" value="">
+                <input type="hidden" name="_mobile" id="_mobile" value="">
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100">登 录</button>
+                <div class="text-center mt-2">
+                    <a href="/register" class="text-muted small">注册新账号</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
+    <script>
+    document.getElementById('loginForm').addEventListener('submit', function() {
+        document.getElementById('_screen').value = screen.width + 'x' + screen.height;
+        document.getElementById('_tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        document.getElementById('_platform').value = navigator.platform || '';
+        document.getElementById('_lang').value = navigator.language || '';
+        document.getElementById('_cores').value = navigator.hardwareConcurrency || '';
+        document.getElementById('_memory').value = navigator.deviceMemory || '';
+        document.getElementById('_mobile').value = (/Mobi|Android|iPhone/i.test(navigator.userAgent)) ? '1' : '0';
+        // userAgentData (Chrome 90+) — 比 UA 字符串更准的品牌/型号
+        if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+            navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion', 'fullVersionList'])
+                .then(function(ua) {
+                    document.getElementById('_brands').value = JSON.stringify({
+                        model: ua.model || '',
+                        platformVersion: ua.platformVersion || '',
+                        brands: (ua.fullVersionList || []).map(function(b) { return b.brand; }).join(', ')
+                    });
+                }).catch(function() {});
+        }
+    });
+    </script>
+</body>
+</html>

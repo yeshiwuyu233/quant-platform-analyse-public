@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% from "_date_nav.html" import date_nav %}
+{% block page_title %}🔍 选股筛选器{% endblock %}
+
+{% block content %}
+
+<!-- 日期导航 -->
+{{ date_nav(prev_date, next_date, all_dates, current_date, "/screener/") }}
+
+<!-- 筛选条件栏 -->
+<div class="card mb-3">
+  <div class="card-body">
+    <form id="filterForm" class="row g-3 align-items-end" onsubmit="return false;">
+      <div class="col-md-2">
+        <label class="form-label small text-muted">准确率 ≥</label>
+        <input type="number" id="filterAccMin" class="form-control form-control-sm" step="0.01" min="0" max="1" placeholder="0.6">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small text-muted">今日指标 ≥</label>
+        <input type="number" id="filterIndMin" class="form-control form-control-sm" step="0.1" placeholder="0.8">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small text-muted">行业</label>
+        <select id="filterIndustry" class="form-select form-select-sm">
+          <option value="">全部行业</option>
+          {% for ind in industries %}
+          <option value="{{ ind }}">{{ ind }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label small text-muted">&nbsp;</label>
+        <button type="reset" class="btn btn-outline-secondary btn-sm w-100" onclick="resetFilter()">重置</button>
+      </div>
+      <div class="col-md-1">
+        <label class="form-label small text-muted">&nbsp;</label>
+        <button type="button" class="btn btn-primary btn-sm w-100" onclick="loadData(1)">🔍 搜索</button>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small text-muted">&nbsp;</label>
+        <a href="/export/screener/{{ current_date }}" class="btn btn-success btn-sm w-100">📥 导出 Excel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 统计摘要 -->
+<div class="row g-2 mb-3" id="summaryRow">
+  <div class="col-md-3">
+    <div class="card metric-card text-center py-2">
+      <div class="small text-muted">全市场股票数</div>
+      <div class="fs-5 fw-bold">{{ total_count }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card metric-card text-center py-2" style="border-left-color:#0d6efd;">
+      <div class="small text-muted">筛选结果</div>
+      <div class="fs-5 fw-bold" id="statTotal">-</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card metric-card text-center py-2" style="border-left-color:#ffc107;">
+      <div class="small text-muted">平均准确率</div>
+      <div class="fs-5 fw-bold" id="statAvgAcc">-</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card metric-card text-center py-2" style="border-left-color:#198754;">
+      <div class="small text-muted">平均今日指标</div>
+      <div class="fs-5 fw-bold" id="statAvgInd">-</div>
+    </div>
+  </div>
+</div>
+
+<!-- 结果表格 -->
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>📋 筛选结果</strong>
+    <div>
+      <span class="badge bg-secondary me-2" id="resultCount">0 只</span>
+      <span class="text-muted small" id="pageInfo"></span>
+    </div>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:600px">
+      <table class="table table-dark table-striped mb-0" id="resultTable">
+        <thead>
+          <tr>
+            <th>代码</th>
+            <th>全称</th>
+            <th>行业</th>
+            <th>准确率</th>
+            <th>今日指标</th>
+            <th>今日收益率</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="6" class="text-center text-muted py-4">点击「🔍 搜索」加载数据</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <!-- 分页 -->
+  <div class="card-footer">
+    <nav>
+      <ul class="pagination pagination-sm justify-content-center mb-0" id="pagination"></ul>
+    </nav>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+var currentPage = 1;
+var currentDate = '{{ current_date }}';
+
+function loadData(page) {
+    currentPage = page || 1;
+    var accMin = document.getElementById('filterAccMin').value || '0';
+    var indMin = document.getElementById('filterIndMin').value || '0';
+    var industry = document.getElementById('filterIndustry').value;
+
+    var params = new URLSearchParams({
+        acc_min: accMin,
+        ind_min: indMin,
+        industry: industry,
+        page: currentPage,
+        per_page: 100
+    });
+
+    var tbody = document.querySelector('#resultTable tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>加载中...</td></tr>';
+
+    fetch('/api/screener/' + currentDate + '?' + params.toString())
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderTable(data.rows);
+            renderPagination(data.page, data.pages, data.total);
+            updateStats(data.rows, data.total);
+        })
+        .catch(function(e) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">加载失败: ' + e.message + '</td></tr>';
+        });
+}
+
+function renderTable(rows) {
+    var tbody = document.querySelector('#resultTable tbody');
+    if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">无匹配结果</td></tr>';
+        return;
+    }
+    var html = '';
+    rows.forEach(function(r) {
+        html += '<tr>' +
+            '<td>' + (r['代码'] || '') + '</td>' +
+            '<td>' + (r['全称'] || '') + '</td>' +
+            '<td>' + (r['行业'] || '') + '</td>' +
+            '<td>' + (r['准确率'] || '') + '</td>' +
+            '<td>' + (r['今日指标'] || '') + '</td>' +
+            '<td>' + (r['今日收益率'] || '') + '</td>' +
+            '</tr>';
+    });
+    tbody.innerHTML = html;
+}
+
+function renderPagination(page, pages, total) {
+    var html = '';
+    if (pages > 1) {
+        html += '<li class="page-item' + (page <= 1 ? ' disabled' : '') + '"><a class="page-link" href="#" onclick="loadData(' + (page-1) + ');return false;">◀</a></li>';
+        for (var p = 1; p <= pages; p++) {
+            if (p === 1 || p === pages || (p >= page - 2 && p <= page + 2)) {
+                html += '<li class="page-item' + (p === page ? ' active' : '') + '"><a class="page-link" href="#" onclick="loadData(' + p + ');return false;">' + p + '</a></li>';
+            } else if (p === page - 3 || p === page + 3) {
+                html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+            }
+        }
+        html += '<li class="page-item' + (page >= pages ? ' disabled' : '') + '"><a class="page-link" href="#" onclick="loadData(' + (page+1) + ');return false;">▶</a></li>';
+    }
+    document.getElementById('pagination').innerHTML = html;
+    document.getElementById('resultCount').textContent = total + ' 只';
+    document.getElementById('pageInfo').textContent = pages > 1 ? '第 ' + page + '/' + pages + ' 页' : '';
+}
+
+function updateStats(rows, total) {
+    document.getElementById('statTotal').textContent = total;
+    var sumAcc = 0, sumInd = 0, n = rows.length;
+    rows.forEach(function(r) {
+        sumAcc += parseFloat(r['准确率']) || 0;
+        sumInd += parseFloat(r['今日指标']) || 0;
+    });
+    document.getElementById('statAvgAcc').textContent = n > 0 ? (sumAcc / n).toFixed(2) : '-';
+    document.getElementById('statAvgInd').textContent = n > 0 ? (sumInd / n).toFixed(2) : '-';
+}
+
+function resetFilter() {
+    document.getElementById('filterAccMin').value = '';
+    document.getElementById('filterIndMin').value = '';
+    document.getElementById('filterIndustry').value = '';
+    loadData(1);
+}
+
+// Enter key triggers search
+document.getElementById('filterForm').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); loadData(1); }
+});
+</script>
+{% endblock %}

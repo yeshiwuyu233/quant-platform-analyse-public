@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% from "_date_nav.html" import date_nav %}
+{% block page_title %}⚔️ 礼拜攻势{% endblock %}
+
+{% block content %}
+
+{% if not sheets %}
+<div class="alert alert-warning">暂无该日期的礼拜攻势数据。</div>
+{% else %}
+
+<!-- 日期导航 -->
+{{ date_nav(prev_date, next_date, all_dates, current_date, "/weekly/") }}
+
+<!-- 策略切换按钮组 -->
+{% if report and report.standard and report.cold_industry %}
+<div class="strategy-toggle-wrapper mb-3 text-center">
+  <div class="strategy-toggle btn-group" role="group">
+    <button type="button" class="strategy-btn active" data-strategy="standard" id="btnStandard">
+      🌐 全市场标准策略
+    </button>
+    {% if report.top_industries and report.top_industries.meta and report.top_industries.meta.industries %}
+    <button type="button" class="strategy-btn" data-strategy="top_industries" id="btnTopInd">
+      🏭 前三行业分行业
+    </button>
+    {% endif %}
+    <button type="button" class="strategy-btn" data-strategy="cold_industry" id="btnCold">
+      ❄️ 冷门行业专属策略
+    </button>
+  </div>
+  {% if report.meta and report.meta.cold_industries %}
+  <div class="strategy-hint mt-1">
+    <small class="text-muted">当日单股行业（冷门池）：{{ report.meta.cold_industries | join('、') }}</small>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- 冷门行业总轨迹图（仅冷门策略可见） -->
+<div class="card mb-4" id="coldCombinedCard" style="display:none">
+  <div class="card-header"><strong>📊 冷门行业总轨迹</strong><small class="text-muted ms-2">所有冷门股票的等权合并日收益曲线</small></div>
+  <div class="card-body">
+    <div id="coldCombinedChart" style="height:300px"></div>
+  </div>
+</div>
+
+<!-- 5日生命周期轨迹图 -->
+<div class="card mb-4" id="trajectoryCard">
+  <div class="card-header"><strong>📈 5日生命周期轨迹图</strong><small class="text-muted ms-2">{{ current_date }} 选股 → 后一周逐日累计收益</small></div>
+  <div class="card-body">
+    <div id="trajectoryChart" style="height:400px"></div>
+  </div>
+</div>
+
+<!-- 策略分组透析图 -->
+<div class="card mb-4" id="summaryCard">
+  <div class="card-header"><strong>📊 策略分组透析图</strong></div>
+  <div class="card-body">
+    <div id="weeklyChart" style="height:380px"></div>
+  </div>
+</div>
+
+<!-- 明细表格区域（JS 动态渲染） -->
+<div id="detailTables"></div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var currentStrategy = 'standard';
+    var fullReport = {{ report | tojson if report else 'null' }};
+
+    // ── 辅助：安全获取嵌套值 ──
+    function getStrategyData() {
+        if (!fullReport) return null;
+        var strat = fullReport[currentStrategy];
+        if (strat && (strat.summary || strat.sheets)) return strat;
+        // 旧格式兼容
+        if (fullReport['整体回报总结']) return fullReport;
+        return null;
+    }
+
+    function getSummary() {
+        var data = getStrategyData();
+        if (!data) return [];
+        if (data.summary) return data.summary;
+        var s = data['整体回报总结'];
+        return s ? (s.rows || []) : [];
+    }
+
+    function getSheets() {
+        var data = getStrategyData();
+        if (!data) return {};
+        if (data.sheets) return data.sheets;
+        // 旧格式
+        var s = {};
+        for (var k in data) {
+            if (k !== '整体回报总结' && Object.prototype.hasOwnProperty.call(data, k)) {
+                s[k] = data[k];
+            }
+        }
+        return s;
+    }
+
+    // ── 安全渲染图表（先销毁旧实例） ──
+    function safeRenderChart(domId, renderFn, data) {
+        var el = document.getElementById(domId);
+        if (!el) return;
+        // 销毁旧实例
+        var old = echarts.getInstanceByDom(el);
+        if (old) old.dispose();
+        renderFn(domId, data);
+    }
+
+    // ── 渲染明细表格 ──
+    function renderTables() {
+        var sheets = getSheets();
+        var container = document.getElementById('detailTables');
+        if (!container) return;
+
+        var names = Object.keys(sheets);
+        if (names.length === 0) {
+            container.innerHTML = '<div class="alert alert-warning">暂无该策略的明细数据。</div>';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < names.length; i++) {
+            var name = names[i];
+            var t = sheets[name];
+            if (!t || !t.rows || t.rows.length === 0) {
+                html += '<div class="card mb-4">' +
+                    '<div class="card-header"><strong>📊 ' + name + '</strong></div>' +
+                    '<div class="card-body p-0"><div class="p-3 text-muted">该策略当日空仓。</div></div>' +
+                    '</div>';
+                continue;
+            }
+            var cols = t.cols || [];
+            html += '<div class="card mb-4">' +
+                '<div class="card-header"><strong>📊 ' + name + '</strong></div>' +
+                '<div class="card-body p-0">' +
+                '<div class="table-responsive" style="max-height:600px">' +
+                '<table class="table table-dark table-striped mb-0"><thead><tr>';
+            for (var c = 0; c < cols.length; c++) {
+                html += '<th>' + cols[c] + '</th>';
+            }
+            html += '</tr></thead><tbody>';
+            for (var r = 0; r < t.rows.length; r++) {
+                html += '<tr>';
+                for (var c2 = 0; c2 < cols.length; c2++) {
+                    var val = t.rows[r][cols[c2]];
+                    html += '<td>' + (val != null ? val : '') + '</td>';
+                }
+                html += '</tr>';
+            }
+            html += '</tbody></table></div></div></div>';
+        }
+        container.innerHTML = html;
+    }
+
+    // ── 重绘全部 ──
+    function redrawAll() {
+        var summary = getSummary();
+        if (summary.length > 0) {
+            safeRenderChart('trajectoryChart', renderWeeklyTrajectory, summary);
+            safeRenderChart('weeklyChart', renderWeeklySummary, summary);
+        }
+        renderTables();
+
+        // 冷门总轨迹图：仅冷门策略显示
+        var coldCard = document.getElementById('coldCombinedCard');
+        if (coldCard) {
+            if (currentStrategy === 'cold_industry' && fullReport && fullReport.cold_industry && fullReport.cold_industry.combined_trajectory) {
+                coldCard.style.display = '';
+                safeRenderChart('coldCombinedChart', renderColdCombinedTrajectory, fullReport.cold_industry.combined_trajectory);
+            } else {
+                coldCard.style.display = 'none';
+            }
+        }
+
+        // 更新提示文字
+        var hintEl = document.querySelector('.strategy-hint small');
+        if (hintEl && fullReport && fullReport.meta) {
+            var cold = fullReport.meta.cold_industries || [];
+            if (currentStrategy === 'cold_industry') {
+                hintEl.textContent = '当日单股行业（冷门池）：' + cold.join('、');
+                hintEl.style.color = '#ffc107';
+            } else if (currentStrategy === 'top_industries') {
+                var topMeta = fullReport.top_industries && fullReport.top_industries.meta;
+                var topInds = topMeta ? (topMeta.industries || []) : [];
+                hintEl.textContent = '分行业计算（指标>1.0）：' + topInds.join('、');
+                hintEl.style.color = '#0dcaf0';
+            } else {
+                hintEl.textContent = '全市场范围内所有股票参与礼拜攻势';
+                hintEl.style.color = '';
+            }
+        }
+    }
+
+    // ── 策略切换 ──
+    function switchStrategy(strategy) {
+        if (currentStrategy === strategy) return;
+        currentStrategy = strategy;
+
+        var btns = document.querySelectorAll('.strategy-btn');
+        for (var i = 0; i < btns.length; i++) {
+            btns[i].classList.remove('active');
+            if (btns[i].getAttribute('data-strategy') === strategy) {
+                btns[i].classList.add('active');
+            }
+        }
+
+        redrawAll();
+    }
+
+    // ── 绑定按钮（安全检查） ──
+    var btnStd = document.getElementById('btnStandard');
+    var btnCold = document.getElementById('btnCold');
+    if (btnStd) btnStd.addEventListener('click', function() { switchStrategy('standard'); });
+    var btnTopInd = document.getElementById('btnTopInd');
+    if (btnTopInd) btnTopInd.addEventListener('click', function() { switchStrategy('top_industries'); });
+    if (btnCold) btnCold.addEventListener('click', function() { switchStrategy('cold_industry'); });
+
+    // ── 初始渲染 ──
+    {% if chart_data %}
+    safeRenderChart('trajectoryChart', renderWeeklyTrajectory, {{ chart_data | tojson }});
+    safeRenderChart('weeklyChart', renderWeeklySummary, {{ chart_data | tojson }});
+    {% endif %}
+    renderTables();
+})();
+</script>
+{% endblock %}

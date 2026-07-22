@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_date_nav.html" import date_nav %}
+{% block page_title %}📊 首页面板{% endblock %}
+
+{% block content %}
+{% if not tracking %}
+<div class="alert alert-warning">暂无数据，请先运行流水线生成复盘报告。</div>
+{% else %}
+{% set t = tracking %}
+
+<!-- 日期导航 -->
+{{ date_nav(prev_date, next_date, all_dates, current_date, "/?date=") }}
+
+<!-- 第一行：三阶胜率 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted">指标 > 0.8 胜率</h6>
+                <h2 class="card-title mb-0">{{ t.acc_08_raw or '-' }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted">指标 > 1.2 胜率</h6>
+                <h2 class="card-title mb-0">{{ t.acc_12_raw or '-' }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted">全样本胜率</h6>
+                <h2 class="card-title mb-0">{{ t.all_raw or '-' }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 第二行：冷门Alpha + 辅助指标 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted">全市场冷门 Alpha<span class="tip" data-tip="从指标大于1.0的股票池中，筛选出所属行业仅含一只股票的那些股票，计算其平均回报率。">?</span></h6>
+                <h2 class="card-title mb-0">{{ t.cold_alpha_raw or '-' }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted">剔除冷门行业胜率</h6>
+                <h2 class="card-title mb-0">{{ t.nc_raw or '-' }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card metric-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted">前三行业胜率</h6>
+                <h2 class="card-title mb-0">{{ t.t3_raw or '-' }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 下一日预测达标数 -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><strong>📈 下一日预测达标数</strong></div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="fs-3 fw-bold text-info">{{ t.next_08 or '-' }}</div>
+                        <div class="text-muted small">指标 > 0.8</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fs-3 fw-bold text-primary">{{ t.next_10 or '-' }}</div>
+                        <div class="text-muted small">指标 > 1.0</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="fs-3 fw-bold text-warning">{{ t.next_12 or '-' }}</div>
+                        <div class="text-muted small">指标 > 1.2</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

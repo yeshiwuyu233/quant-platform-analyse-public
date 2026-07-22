@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block page_title %}📈 历史趋势{% endblock %}
+
+{% block content %}
+{% if not records %}
+<div class="alert alert-warning">暂无历史数据。</div>
+{% else %}
+<!-- 图表区域 -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><strong>胜率趋势</strong></div>
+            <div class="card-body">
+                <div id="winRateChart" style="height:400px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><strong>全市场冷门 Alpha 趋势</strong></div>
+            <div class="card-body">
+                <div id="alphaChart" style="height:350px;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><strong>下一日预测达标数趋势</strong></div>
+            <div class="card-body">
+                <div id="nextDayChart" style="height:350px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if weekly_strategy %}
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><strong>礼拜攻势历史收益</strong></div>
+            <div class="card-body">
+                <div id="weeklyStrategyNavChart" style="height:400px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><strong>礼拜攻势回撤</strong></div>
+            <div class="card-body">
+                <div id="weeklyStrategyDrawdownChart" style="height:360px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><strong>礼拜攻势历史明细</strong></div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:500px">
+            <table class="table table-dark table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>指标&gt;1 数量</th>
+                        <th>是否建仓</th>
+                        <th>前三行业</th>
+                        <th>过滤后三行业</th>
+                        <th>&gt;=60持有80%前三行业+20%做多中证1000股指期货<br>&lt;60持有20%做空中证1000股指期货(5倍)</th>
+                        <th>冷门行业</th>
+                        <th>标准&gt;1</th>
+                        <th>中证1000</th>
+                        <th>过滤净值</th>
+                        <th>过滤回撤</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in weekly_strategy %}
+                    <tr>
+                        <td><a href="/weekly/{{ r.date_raw }}" class="date-link">{{ r.date }}</a></td>
+                        <td>{{ r.gt1_count }}</td>
+                        <td>{% if r.passes_filter %}建仓{% else %}空仓{% endif %}</td>
+                        <td>{% if r.top_return is not none %}{{ "%.2f"|format(r.top_return) }}%{% else %}-{% endif %}</td>
+                        <td>{{ "%.2f"|format(r.filtered_top_return) }}%</td>
+                        <td>{{ "%.2f"|format(r.long_short_top_return) }}%</td>
+                        <td>{% if r.cold_return is not none %}{{ "%.2f"|format(r.cold_return) }}%{% else %}-{% endif %}</td>
+                        <td>{% if r.standard_return is not none %}{{ "%.2f"|format(r.standard_return) }}%{% else %}-{% endif %}</td>
+                        <td>{% if r.csi1000_return is not none %}{{ "%.2f"|format(r.csi1000_return) }}%{% else %}-{% endif %}</td>
+                        <td>{{ r.filtered_top_nav }}</td>
+                        <td>{{ "%.2f"|format(r.filtered_top_drawdown) }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 历史数据表格（日期可点击） -->
+<div class="card">
+    <div class="card-header"><strong>历史数据明细（点击日期查看回测详情）</strong></div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:500px">
+            <table class="table table-dark table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th>日期</th>
+                        <th>指标>0.8 胜率</th>
+                        <th>指标>1.2 胜率</th>
+                        <th>全样本胜率</th>
+                        <th>成功/总数</th>
+                        <th>冷门 Alpha</th>
+                        <th>下一日达标数</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in records %}
+                    <tr class="clickable-row" data-href="/backtest/{{ r.date_raw }}">
+                        <td><a href="/backtest/{{ r.date_raw }}" class="date-link">{{ r.date }}</a></td>
+                        <td>{{ r.acc_08 }}%</td>
+                        <td>{{ r.acc_12 }}%</td>
+                        <td>{{ r.all_pct }}%</td>
+                        <td>{{ r.all_success }}/{{ r.all_total }}</td>
+                        <td>{% if r.cold_alpha is not none %}{{ r.cold_alpha }}%{% else %}-{% endif %}</td>
+                        <td>{{ r.next_10 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const records = {{ records|tojson|safe }};
+const weeklyStrategy = {{ weekly_strategy|tojson|safe }};
+renderWinRateTrend('winRateChart', records);
+renderAlphaTrend('alphaChart', records);
+renderNextDayTrend('nextDayChart', records);
+renderWeeklyStrategyNav('weeklyStrategyNavChart', weeklyStrategy);
+renderWeeklyStrategyDrawdown('weeklyStrategyDrawdownChart', weeklyStrategy);
+</script>
+{% endblock %}

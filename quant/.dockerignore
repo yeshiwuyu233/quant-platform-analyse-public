@@ -1,0 +1,16 @@
+# 排除生成的数据文件（运行时挂载卷，不打包进镜像）
+*.xlsx
+*.bak
+*.json
+*.db
+__pycache__/
+*.pyc
+.claude/
+.git/
+.env
+.env.local
+.env.example
+backups/
+docs/
+.gitignore
+.gitignore.*

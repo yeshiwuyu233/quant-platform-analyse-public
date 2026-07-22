@@ -1,0 +1,54 @@
+# ── 数据文件（不上传） ──
+*.xlsx
+*.xls
+*.csv
+*.json
+*.db
+*.sqlite
+market.db
+
+# ── 备份 ──
+*.bak
+*.bak.*
+*.cbak
+*.pre_fix
+*.corrupted*
+*.auto_repair*
+backups/
+
+# ── 配置/密钥（不上传） ──
+.env
+.env.local
+*.key
+*.pem
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+
+# ── 操作系统 ──
+.DS_Store
+Thumbs.db
+
+# ── IDE ──
+.vscode/
+.idea/
+
+# ── 日志 ──
+*.log
+login_log.json
+
+# ── Claude ──
+.claude/
+.claude.json
+
+# ── 临时文件 ──
+*.tmp
+*.swp
+.locks/

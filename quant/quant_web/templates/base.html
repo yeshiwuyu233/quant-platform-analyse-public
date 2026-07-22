@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>量化分析系统</title>
+    <link href="{{ url_for('static', filename='bootstrap.min.css') }}?v=2" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style.css') }}?v=6" rel="stylesheet">
+
+</head>
+<body>
+    <div class="d-flex flex-column vh-100">
+        <!-- Top bar -->
+        <div class="topbar d-flex align-items-center gap-2 px-3 py-2 border-bottom">
+            <button id="menuBtn" class="btn d-md-none btn-sm" onclick="toggleSidebar()" style="border-color:#555;color:#ccc;">☰</button>
+            <span class="fw-semibold fs-6 text-white" id="pageTitle">{% block page_title %}面板{% endblock %}</span>
+        </div>
+
+        <!-- Mobile overlay -->
+        <div class="sidebar-overlay d-none" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+        <div class="d-flex flex-grow-1 overflow-hidden">
+            <!-- Sidebar -->
+            <div class="sidebar d-flex flex-column border-end d-none d-md-flex" id="sidebar">
+                <div class="sidebar-heading text-center py-3 fw-semibold text-white border-bottom">📊 量化系统</div>
+                <nav class="list-group list-group-flush">
+                    <a href="/" class="list-group-item list-group-item-action {{ 'active' if request.path == '/' else '' }}">首页面板</a>
+                    <a href="/backtest" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/backtest') else '' }}">每日回测</a>
+                    <a href="/weekly" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/weekly') else '' }}">礼拜攻势</a>
+                    <a href="/history" class="list-group-item list-group-item-action {{ 'active' if request.path == '/history' else '' }}">历史趋势</a>
+                    <a href="/screener" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/screener') else '' }}">选股筛选</a>
+                </nav>
+                <div class="mt-auto">
+                    <div class="px-3 pb-2 pt-2">
+                        <span class="small text-secondary" style="opacity:0.5;font-size:10px;">量化回测 v2.0</span>
+                    </div>
+                    {% if current_user and current_user.role == 'admin' %}
+                    <a href="/admin/users" class="d-block px-3 py-1 small text-secondary text-decoration-none">👥 用户管理</a>
+                    <a href="/admin/logins" class="d-block px-3 py-1 small text-secondary text-decoration-none">📋 登录记录</a>
+                    <a href="/admin/upload" class="d-block px-3 py-1 small text-secondary text-decoration-none">📤 上传数据</a>
+                    <a href="/admin/health" class="d-block px-3 py-1 small text-secondary text-decoration-none">🩺 系统健康</a>
+                    {% endif %}
+                    <div class="sidebar-footer d-flex justify-content-between align-items-center px-3 py-2 small">
+                        <span class="text-muted">{{ current_user.name }}</span>
+                        <a href="/logout" class="text-danger text-decoration-none">退出</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-grow-1 overflow-auto p-3" id="content">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            if (sidebar) {
+                sidebar.classList.toggle('d-none');
+            }
+            if (overlay) {
+                overlay.classList.toggle('d-none');
+            }
+        }
+    </script>
+    <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='echarts.min.js') }}?v=7"></script>
+    <script src="{{ url_for('static', filename='charts.js') }}?v=15"></script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

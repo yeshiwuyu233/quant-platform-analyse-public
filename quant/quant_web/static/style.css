@@ -1,0 +1,417 @@
+/* ── Bootstrap 暗黑主题颜色覆盖（更亮的深色） ── */
+[data-bs-theme="dark"] {
+    --bs-body-bg: #1e2026;
+    --bs-body-color: #d0d0d0;
+    --bs-tertiary-bg: #252830;
+    --bs-secondary-bg: #2a2d34;
+    --bs-emphasis-color: #fff;
+    --bs-border-color: #383b42;
+    --bs-card-bg: #252830;
+    --bs-card-border-color: #383b42;
+    --bs-card-cap-bg: #2a2d35;
+    --bs-card-color: #d0d0d0;
+    --bs-table-bg: #252830;
+    --bs-table-striped-bg: #2a2d35;
+    --bs-table-hover-bg: #333840;
+    --bs-table-border-color: #383b42;
+    --bs-table-color: #d0d0d0;
+    --bs-body-color-rgb: 208, 208, 208;
+    --bs-btn-color: #ccc;
+    --bs-btn-border-color: #555;
+    --bs-btn-hover-bg: #383b42;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-active-bg: #383b42;
+    --bs-dropdown-bg: #252830;
+    --bs-dropdown-border-color: #383b42;
+    --bs-dropdown-color: #d0d0d0;
+    --bs-list-group-bg: transparent;
+    --bs-list-group-color: #b0b0b0;
+    --bs-list-group-hover-bg: #333840;
+    --bs-list-group-hover-color: #fff;
+    --bs-list-group-action-active-bg: #333840;
+    --bs-list-group-action-active-color: #fff;
+    --bs-badge-bg: #0d6efd;
+    --bs-code-color: #e685b5;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+    min-width: 220px;
+    max-width: 220px;
+    background-color: #252830;
+}
+.sidebar-overlay {
+    display: none;
+}
+.sidebar .list-group-item {
+    border: none;
+    padding: 12px 24px;
+    font-size: 14px;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+}
+.sidebar .list-group-item:hover {
+    border-left-color: var(--bs-border-color);
+}
+.sidebar .list-group-item.active {
+    border-left-color: #0d6efd;
+    font-weight: 600;
+}
+.sidebar-footer {
+    border-top: 1px solid var(--bs-border-color);
+}
+
+/* ── Top bar ── */
+.topbar {
+    background: #2a2d34;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+/* ── Cards ── */
+.card {
+    border-radius: 10px;
+    transition: box-shadow 0.2s;
+}
+.card:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+.card-header {
+    font-weight: 600;
+    font-size: 14px;
+    padding: 10px 16px;
+}
+
+/* ── Metric cards ── */
+.metric-card {
+    border-left: 4px solid #0d6efd;
+    transition: transform 0.15s, box-shadow 0.2s;
+}
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.metric-card .card-subtitle {
+    font-size: 0.82rem;
+    margin-bottom: 8px;
+    color: #999;
+}
+.metric-card h2, .metric-card .fs-5 {
+    color: #fff;
+    font-weight: 700;
+}
+
+/* ── Tables ── */
+.table {
+    font-size: 13px;
+    margin-bottom: 0;
+}
+.table th {
+    font-weight: 600;
+    color: #aaa;
+    white-space: nowrap;
+    padding: 8px 10px;
+}
+.table td {
+    padding: 7px 10px;
+    vertical-align: middle;
+}
+.table-success td { background: rgba(25, 135, 84, 0.12); }
+.table-danger td { background: rgba(220, 53, 69, 0.12); }
+
+/* ── Clickable rows ── */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover { background: var(--bs-table-hover-bg) !important; }
+.date-link { color: #0d6efd; font-weight: 500; text-decoration: none; }
+.date-link:hover { text-decoration: underline; }
+
+/* ── Date nav: month dropdown + day pills ── */
+.date-nav-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.date-nav-month .form-select-sm {
+    width: auto;
+    min-width: 100px;
+    font-size: 13px;
+    padding: 4px 28px 4px 10px;
+    background-color: #252830;
+    color: #d0d0d0;
+    border-color: #555;
+}
+.date-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.date-nav-arrow {
+    flex-shrink: 0;
+}
+.date-nav-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.date-nav-days .btn {
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    text-align: center;
+    white-space: nowrap;
+}
+.date-nav-label {
+    font-size: 13px;
+    color: #aaa;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* ── Tab pills ── */
+.nav-pills .nav-link {
+    color: #aaa;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 600;
+    font-size: 15px;
+}
+.nav-pills .nav-link.active {
+    background: #0d6efd;
+    color: #fff;
+}
+.nav-pills .nav-link:hover:not(.active) {
+    background: #333840;
+    color: #fff;
+}
+
+/* ── Bootstrap btn overrides ── */
+.btn-outline-secondary {
+    border-color: #555;
+    color: #ccc;
+}
+.btn-outline-secondary:hover {
+    background: #383b42;
+    border-color: #777;
+    color: #fff;
+}
+.btn-outline-secondary.disabled,
+.btn-outline-secondary:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+.btn-sm {
+    padding: 3px 9px;
+    font-size: 12px;
+    border-radius: 5px;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #252830; }
+::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #777; }
+
+/* ── Section divider ── */
+.section-divider {
+    border-left: 4px solid;
+    padding-left: 16px;
+}
+.section-divider h4 {
+    margin-bottom: 2px;
+    font-weight: 700;
+}
+
+/* ── Tooltip (annotation ?) ── */
+.tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #555;
+    color: #ccc;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: help;
+    position: relative;
+    vertical-align: middle;
+    margin-left: 4px;
+    line-height: 1;
+}
+.tip::after {
+    content: attr(data-tip);
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #e0e0e0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+    padding: 8px 12px;
+    border-radius: 6px;
+    white-space: pre-line;
+    max-width: 320px;
+    width: max-content;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 9999;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    text-align: left;
+}
+.tip:hover::after {
+    opacity: 1;
+}
+
+/* ── Strategy toggle (礼拜攻势) ── */
+.strategy-toggle-wrapper {
+    margin-bottom: 16px;
+}
+.strategy-toggle {
+    display: inline-flex;
+    border-radius: 50px;
+    overflow: hidden;
+    border: 1px solid #555;
+    background: #2a2d34;
+}
+.strategy-btn {
+    padding: 8px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: #aaa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    outline: none;
+    white-space: nowrap;
+}
+.strategy-btn:first-child {
+    border-radius: 50px 0 0 50px;
+}
+.strategy-btn:last-child {
+    border-radius: 0 50px 50px 0;
+}
+.strategy-btn:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.05);
+}
+.strategy-btn.active {
+    background: #0d6efd;
+    color: #fff;
+}
+.strategy-btn.active:hover {
+    background: #0b5ed7;
+}
+.strategy-hint {
+    opacity: 0.8;
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 767.98px) {
+    /* 通用 */
+    body { font-size: 0.9rem; }
+    .p-3 { padding: 0.75rem !important; }
+
+    /* 侧边栏 */
+    .sidebar {
+        position: fixed !important;
+        top: 0; left: 0; bottom: 0;
+        z-index: 1050;
+        min-width: 240px;
+        box-shadow: 4px 0 16px rgba(0,0,0,0.5);
+    }
+    .sidebar.d-none { display: none !important; }
+    .sidebar-overlay {
+        display: block !important;
+        position: fixed;
+        inset: 0;
+        z-index: 1040;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    .sidebar-overlay.d-none { display: none !important; }
+
+    /* 指标卡片 */
+    .metric-card .card-subtitle { font-size: 0.7rem; }
+    .metric-card h2 { font-size: 1.3rem; }
+    .metric-card .card-body { padding: 0.75rem; }
+
+    /* 日期导航 */
+    .date-nav-container {
+        gap: 6px;
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .date-nav-row {
+        gap: 3px;
+    }
+    .date-nav-days {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 3px;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+    }
+    .date-nav-days .btn {
+        flex: 0 0 auto;
+        min-width: 34px;
+        font-size: 0.72rem;
+        padding: 4px 5px;
+    }
+    .date-nav-month {
+        width: 100%;
+    }
+    .date-nav-month .form-select-sm {
+        width: 100%;
+        font-size: 0.8rem;
+    }
+    .date-nav-label {
+        font-size: 0.75rem;
+        text-align: center;
+        padding-top: 2px;
+    }
+
+    /* 表格 */
+    .table { font-size: 11px; }
+    .table th, .table td { padding: 5px 6px; }
+    .table-responsive[style*="max-height"] { max-height: 300px !important; }
+
+    /* 图表 */
+    [id$="Chart"], [id$="chart"] { height: 220px !important; }
+    #returnHistogram { height: 200px !important; }
+    #coldCombinedChart { height: 200px !important; }
+
+    /* 策略按钮 */
+    .strategy-btn {
+        font-size: 0.7rem;
+        padding: 6px 10px;
+    }
+
+    /* 卡片 */
+    .card-header { font-size: 0.8rem; padding: 8px 12px; }
+    .card-body { padding: 10px; }
+
+    /* Tab pills */
+    .nav-pills .nav-link {
+        font-size: 0.78rem;
+        padding: 8px 12px;
+    }
+
+    /* 顶部导航 */
+    .topbar { padding: 6px 10px !important; }
+    .topbar .fs-6 { font-size: 0.9rem !important; }
+
+    /* AI chat */
+    #aiChatWidget { bottom: 10px; right: 10px; }
+    #aiChatPanel { width: calc(100vw - 20px); right: 0; }
+    #aiChatMessages { height: 240px; }
+}

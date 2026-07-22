@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block page_title %}上传数据{% endblock %}
+{% block content %}
+<div class="container py-3" style="max-width:700px">
+
+    <h5 class="mb-3">上传每日 Excel 数据</h5>
+
+    <div class="small text-muted mb-3">
+        <a href="/admin/health">🩺 查看系统健康状态 →</a>
+    </div>
+
+    <form id="uploadForm" enctype="multipart/form-data" class="card bg-tertiary p-3 mb-4">
+        <div class="mb-3">
+            <label class="form-label">日期 (YYYYMMDD)</label>
+            <input type="text" class="form-control" name="date" id="dateInput"
+                   value="{{ today }}" placeholder="20260511" maxlength="8" required>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Excel 文件 (.xlsx)</label>
+            <input type="file" class="form-control" name="file" id="fileInput"
+                   accept=".xlsx" required>
+        </div>
+        <div id="uploadMsg" class="mb-2"></div>
+        <button type="submit" class="btn btn-primary" id="uploadBtn">上传并运行流水线</button>
+    </form>
+
+    <!-- Pipeline status -->
+    <div class="card bg-tertiary p-3 mb-4">
+        <h6>流水线状态 <span id="statusBadge" class="badge bg-secondary">空闲</span></h6>
+        <div id="statusDetail" class="small text-muted mt-1"></div>
+    </div>
+
+    <!-- History -->
+    <div class="card bg-tertiary p-3">
+        <h6>上传记录</h6>
+        <div class="table-responsive">
+            <table class="table table-sm small">
+                <thead>
+                    <tr><th>日期</th><th>状态</th><th>时间</th><th>耗时</th></tr>
+                </thead>
+                <tbody id="historyBody">
+                    {% if history %}
+                    {% for h in history %}
+                    <tr>
+                        <td>{{ h.date }}</td>
+                        <td><span class="badge bg-{{ 'success' if h.status == 'success' else 'danger' }}">{{ h.status }}</span></td>
+                        <td>{{ h.time }}</td>
+                        <td>{{ h.elapsed }}s</td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr><td colspan="4" class="text-muted">暂无记录</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusBadge = document.getElementById('statusBadge');
+const statusDetail = document.getElementById('statusDetail');
+const uploadForm = document.getElementById('uploadForm');
+const uploadMsg = document.getElementById('uploadMsg');
+const uploadBtn = document.getElementById('uploadBtn');
+const historyBody = document.getElementById('historyBody');
+
+let pollTimer = null;
+
+function updateStatusUI(status) {
+    if (status.running) {
+        const stageMap = {
+            write_master: '写入总表',
+            refresh_market_cache: '刷新缓存',
+            backtest: '回测中',
+            weekly: '礼拜攻势中',
+            starting: '启动中'
+        };
+        statusBadge.textContent = stageMap[status.stage] || '运行中';
+        statusBadge.className = 'badge bg-warning text-dark';
+        statusDetail.textContent = (status.date ? '日期: ' + status.date + ' | ' : '')
+            + '开始: ' + (status.started_at || '');
+    } else {
+        statusBadge.textContent = status.stage === 'failed' ? '失败' : '空闲';
+        statusBadge.className = status.stage === 'failed' ? 'badge bg-danger' : 'badge bg-secondary';
+        if (status.date) {
+            statusDetail.textContent = '上次: ' + status.date
+                + ' | ' + (status.finished_at || '')
+                + (status.error ? ' | ' + status.error : '');
+        }
+    }
+}
+
+async function parseFetchResponse(response) {
+    const contentType = response.headers.get('content-type') || '';
+    const text = await response.text();
+    let data = null;
+    if (contentType.includes('application/json')) {
+        try {
+            data = text ? JSON.parse(text) : {};
+        } catch (err) {
+            throw new Error('返回 JSON 解析失败: ' + err.message);
+        }
+    }
+    if (!response.ok) {
+        const msg = data && data.error ? data.error : (text || response.statusText);
+        throw new Error('HTTP ' + response.status + ': ' + msg.slice(0, 200));
+    }
+    if (!data) {
+        throw new Error('服务器返回非 JSON: ' + text.slice(0, 200));
+    }
+    return data;
+}
+
+function pollStatus() {
+    fetch('/api/pipeline/status')
+        .then(parseFetchResponse)
+        .then(data => {
+            updateStatusUI(data);
+            if (data.running) {
+                if (!pollTimer) pollTimer = setInterval(pollStatus, 3000);
+            } else {
+                if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+                if (data.history) {
+                    historyBody.innerHTML = data.history.map(h =>
+                        `<tr>
+                            <td>${h.date}</td>
+                            <td><span class="badge bg-${h.status === 'success' ? 'success' : 'danger'}">${h.status}</span></td>
+                            <td>${h.time}</td>
+                            <td>${h.elapsed}s</td>
+                        </tr>`
+                    ).join('') || '<tr><td colspan="4" class="text-muted">暂无记录</td></tr>';
+                }
+            }
+        })
+        .catch(err => {
+            statusBadge.textContent = '状态异常';
+            statusBadge.className = 'badge bg-danger';
+            statusDetail.textContent = err.message;
+        });
+}
+
+uploadForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('fileInput');
+    const dateInput = document.getElementById('dateInput');
+
+    if (!fileInput.files[0]) {
+        uploadMsg.innerHTML = '<div class="text-danger">请选择文件</div>';
+        return;
+    }
+    if (!/^\d{8}$/.test(dateInput.value)) {
+        uploadMsg.innerHTML = '<div class="text-danger">日期格式: YYYYMMDD</div>';
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('date', dateInput.value);
+
+    uploadBtn.disabled = true;
+    uploadMsg.innerHTML = '<div class="text-info">上传中...</div>';
+
+    fetch('/admin/upload', {method: 'POST', body: formData})
+        .then(parseFetchResponse)
+        .then(data => {
+            if (data.ok) {
+                uploadMsg.innerHTML = '<div class="text-success">' + data.message + '</div>';
+                pollStatus();
+                if (!pollTimer) pollTimer = setInterval(pollStatus, 3000);
+            } else {
+                uploadMsg.innerHTML = '<div class="text-danger">' + (data.error || '上传失败') + '</div>';
+            }
+        })
+        .catch(err => {
+            uploadMsg.innerHTML = '<div class="text-danger">网络错误: ' + err.message + '</div>';
+        })
+        .finally(() => {
+            uploadBtn.disabled = false;
+        });
+});
+
+// Initial poll
+pollStatus();
+</script>
+{% endblock %}

@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">🩺 系统健康状态</h4>
+    <span class="small text-muted">
+      {% if guardian.alive %}
+        ✅ Guardian 正常 · {{ guardian.seconds_ago }}秒前更新
+      {% else %}
+        ❌ Guardian 无响应 · {{ guardian.seconds_ago }}秒无更新
+      {% endif %}
+    </span>
+  </div>
+
+  <!-- Row 1: Service Status + Disk -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-8">
+      <div class="card h-100">
+        <div class="card-header py-2">🔌 服务状态</div>
+        <div class="card-body">
+          <div class="row g-2">
+            {% for name, state in services.items() %}
+            <div class="col-4 col-md-2">
+              <div class="text-center p-2 rounded border {{ 'border-success' if state == 'ok' else 'border-secondary' if state == 'idle' else 'border-danger' }}">
+                {% if state == 'ok' %}
+                  <div class="fs-3 text-success">●</div>
+                  <small class="d-block text-success">{{ name }}</small>
+                {% elif state == 'idle' %}
+                  <div class="fs-3 text-secondary">○</div>
+                  <small class="d-block text-secondary">{{ name }}</small>
+                {% elif state == 'repaired' %}
+                  <div class="fs-3 text-warning">◐</div>
+                  <small class="d-block text-warning">{{ name }}</small>
+                {% else %}
+                  <div class="fs-3 text-danger">●</div>
+                  <small class="d-block text-danger">{{ name }}</small>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% if docker_uptime %}
+          <div class="mt-2 small text-muted">
+            {% for container, started in docker_uptime.items() %}
+              {{ container }}: {{ started[:19] }} &nbsp;
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card h-100">
+        <div class="card-header py-2">💾 磁盘</div>
+        <div class="card-body text-center">
+          <div style="position:relative;width:120px;margin:0 auto">
+            <canvas id="diskGauge" width="120" height="120"></canvas>
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;font-weight:bold">
+              {{ disk.percent }}%
+            </div>
+          </div>
+          <small class="text-muted">{{ disk.available_gb }}G / 40G 可用</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: Data Stats + Pipeline History Chart -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="card h-100">
+        <div class="card-header py-2">📊 数据概览</div>
+        <div class="card-body">
+          <table class="table table-sm small mb-0">
+            <tr><td>Whole Market.xlsx</td><td class="text-end">{{ data_stats.xlsx_size_mb }} MB</td></tr>
+            <tr><td>CSV 文件</td><td class="text-end">{{ data_stats.csv_files }} 份</td></tr>
+            <tr><td>CSV 总大小</td><td class="text-end">{{ data_stats.csv_size_mb }} MB</td></tr>
+            <tr><td>最新 CSV</td><td class="text-end">{{ data_stats.latest_csv }}</td></tr>
+            <tr><td>Excel 最近生成</td><td class="text-end">{{ data_stats.xlsx_generated_at }}</td></tr>
+            <tr><td>market.db (SQLite)</td><td class="text-end">{{ data_stats.db_size_mb }} MB</td></tr>
+            <tr><td>回测报告</td><td class="text-end">{{ data_stats.reports }} 份</td></tr>
+            <tr><td>礼拜攻势</td><td class="text-end">{{ data_stats.weekly }} 份</td></tr>
+            <tr><td>最近备份</td><td class="text-end">
+              {% if backups %} {{ backups[0].date }} ({{ backups[0].size_mb }}MB)
+              {% else %} 暂无 {% endif %}
+            </td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-8">
+      <div class="card h-100">
+        <div class="card-header py-2 d-flex justify-content-between">
+          <span>📈 流水线运行历史</span>
+          <span class="small text-muted">最后: {{ pipeline.last_run[:40] if pipeline.last_run != '未知' else '暂无' }}</span>
+        </div>
+        <div class="card-body py-2">
+          {% if pipeline_history %}
+          <div class="timeline" style="max-height:180px;overflow-y:auto">
+            {% for h in pipeline_history | reverse %}
+            <div class="d-flex align-items-center mb-1 small">
+              <span class="me-2">{{ '✅' if h.status == 'ok' else '❌' }}</span>
+              <span class="text-muted me-2" style="min-width:120px">{{ h.date[:16] }}</span>
+              <span>{{ h.text }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-muted small text-center py-3">暂无流水线运行记录</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Backup Timeline + Data Validation -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-header py-2">📦 备份历史 (最近7天)</div>
+        <div class="card-body">
+          {% if backups %}
+          <div id="backupChart" style="height:150px"></div>
+          {% else %}
+          <div class="text-muted small">暂无备份数据</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card h-100">
+        <div class="card-header py-2">🔍 数据完整性</div>
+        <div class="card-body">
+          {% if data_validation is not defined or data_validation.keys()|length == 0 %}
+            <div class="text-center py-3 text-muted">⏳ 等待 Guardian 下次校验...</div>
+          {% elif data_validation.ok %}
+            <div class="d-flex align-items-center mb-2">
+              <span class="badge bg-success fs-6 me-2">✅</span>
+              <span>xlsx {{ data_validation.sheets }} sheets 通过</span>
+            </div>
+            {% if data_validation.warnings %}
+              {% for w in data_validation.warnings %}
+              <div class="small text-warning">⚠️ {{ w }}</div>
+              {% endfor %}
+            {% endif %}
+            {% if data_validation.errors %}
+              {% for e in data_validation.errors %}
+              <div class="small text-danger">❌ {{ e }}</div>
+              {% endfor %}
+            {% endif %}
+          {% else %}
+            <div class="text-danger">❌ 校验失败: {{ data_validation.error }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="card">
+    <div class="card-header py-2">⚡ 快速操作</div>
+    <div class="card-body">
+      <form method="POST" action="/admin/health/action/restart_crawler" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-warning mb-1">🔄 重启爬虫</button>
+      </form>
+      <form method="POST" action="/admin/health/action/restart_docker" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-danger mb-1">🐋 重启 Docker</button>
+      </form>
+      <form method="POST" action="/admin/health/action/backup_now" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-info mb-1">📦 立即备份</button>
+      </form>
+      <form method="POST" action="/admin/health/action/rebuild_sqlite" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-secondary mb-1">🏗️ 重建 SQLite</button>
+      </form>
+      <form method="POST" action="/admin/health/action/export_market_xlsx" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-sm btn-outline-primary mb-1">生成 Excel</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Disk gauge ──
+(function(){
+  var c = document.getElementById('diskGauge');
+  if(!c) return;
+  var ctx = c.getContext('2d');
+  if(!ctx) return;
+  var pct = {{ disk.percent }};
+  var color = pct > 85 ? '#dc3545' : pct > 75 ? '#ffc107' : '#198754';
+  var cx = 60, cy = 60, r = 50;
+  ctx.clearRect(0,0,120,120);
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.strokeStyle='#333'; ctx.lineWidth=10; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI*1.5,Math.PI*1.5+(Math.PI*2*pct/100)); ctx.strokeStyle=color; ctx.lineWidth=10; ctx.stroke();
+})();
+
+
+// ── Backup chart ──
+echartsReady(function(){
+  var el = document.getElementById('backupChart');
+  if(!el || !window.echarts) return;
+  var raw = {{ backups | tojson | safe }};
+  if(!raw || raw.length===0){ el.innerHTML='<div class="text-muted text-center pt-4">暂无备份记录</div>'; return; }
+  var dates=[], sizes=[];
+  raw.slice().reverse().forEach(function(b){
+    dates.push(b.date?b.date.slice(5):'?');
+    sizes.push(b.size_mb||0);
+  });
+  try {
+    var chart = echarts.init(el);
+    chart.setOption({
+      tooltip:{trigger:'axis',formatter:function(p){return p[0].value+' MB';}},
+      grid:{left:40,right:10,top:10,bottom:25},
+      xAxis:{type:'category',data:dates,axisLabel:{fontSize:10}},
+      yAxis:{type:'value',name:'MB',nameTextStyle:{fontSize:10}},
+      series:[{type:'bar',data:sizes,barWidth:18,
+        itemStyle:{color:'#0d6efd'}}]
+    });
+  } catch(e){ el.innerHTML='<div class="text-danger">图表渲染失败</div>'; }
+});
+
+function echartsReady(fn){
+  if(typeof echarts !== 'undefined'){ fn(); return; }
+  var check = setInterval(function(){
+    if(typeof echarts !== 'undefined'){ clearInterval(check); fn(); }
+  }, 200);
+  setTimeout(function(){ clearInterval(check); }, 5000);
+}
+</script>
+{% endblock %}

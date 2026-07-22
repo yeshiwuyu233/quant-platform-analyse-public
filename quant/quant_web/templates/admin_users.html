@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block page_title %}用户管理{% endblock %}
+
+{% block content %}
+
+{% if msg %}
+<div class="alert alert-success py-2">{{ msg }}</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-danger py-2">{{ error }}</div>
+{% endif %}
+
+<!-- 添加用户 -->
+<div class="card mb-4">
+    <div class="card-header"><strong>➕ 添加用户</strong></div>
+    <div class="card-body">
+        <form method="POST" class="row g-2 align-items-end">
+            <input type="hidden" name="_action" value="add_user">
+            <div class="col-md-3">
+                <label class="form-label small text-muted">用户名</label>
+                <input type="text" name="new_username" class="form-control form-control-sm" placeholder="登录用" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">邮箱</label>
+                <input type="email" name="new_email" class="form-control form-control-sm" placeholder="user@example.com" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">密码</label>
+                <input type="text" name="new_password" class="form-control form-control-sm" placeholder="至少6位" required minlength="6">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small text-muted">角色</label>
+                <select name="new_role" class="form-select form-select-sm">
+                    <option value="user">普通用户</option>
+                    <option value="admin">管理员</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>用户列表</span>
+        <span class="badge bg-secondary">{{ users|length }} 人</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped mb-0 small">
+                <thead>
+                    <tr>
+                        <th>用户名</th>
+                        <th>邮箱</th>
+                        <th>显示名</th>
+                        <th>角色</th>
+                        <th>注册时间</th>
+                        <th style="width:220px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr>
+                        <td><code>{{ u.username }}</code></td>
+                        <td>{{ u.email }}</td>
+                        <td>{{ u.name }}</td>
+                        <td>
+                            {% if u.role == 'admin' %}
+                            <span class="badge bg-danger">管理员</span>
+                            {% else %}
+                            <span class="badge bg-secondary">普通用户</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">{{ u.created_at }}</td>
+                        <td>
+                            <div class="d-flex gap-1">
+                                <!-- 切换角色 -->
+                                <form method="POST" style="display:inline;"
+                                      onsubmit="return confirm('确定要切换 {{ u.username }} 的角色吗？')">
+                                    <input type="hidden" name="_action" value="toggle_role">
+                                    <input type="hidden" name="username" value="{{ u.username }}">
+                                    <button type="submit" class="btn btn-outline-warning btn-sm">
+                                        {% if u.role == 'admin' %}降级{% else %}升级{% endif %}
+                                    </button>
+                                </form>
+                                <!-- 重置密码 -->
+                                <form method="POST" style="display:inline;"
+                                      onsubmit="var pw = prompt('为 {{ u.username }} 设置新密码（至少6位）：'); if (!pw) return false; this.new_password.value = pw; return true;">
+                                    <input type="hidden" name="_action" value="reset_password">
+                                    <input type="hidden" name="username" value="{{ u.username }}">
+                                    <input type="hidden" name="new_password" value="">
+                                    <button type="submit" class="btn btn-outline-info btn-sm">重置密码</button>
+                                </form>
+                                <!-- 删除 -->
+                                <form method="POST" style="display:inline;"
+                                      onsubmit="return confirm('确定要删除用户 {{ u.username }} 吗？此操作不可撤销。')">
+                                    <input type="hidden" name="_action" value="delete">
+                                    <input type="hidden" name="username" value="{{ u.username }}">
+                                    {% if u.username == session.get('user', {}).get('username', '') %}
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" disabled title="不能删除自己">删除</button>
+                                    {% else %}
+                                    <button type="submit" class="btn btn-outline-danger btn-sm">删除</button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

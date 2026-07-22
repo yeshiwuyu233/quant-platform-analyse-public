@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% from "_date_nav.html" import date_nav %}
+{% block page_title %}📋 每日回测详情{% endblock %}
+
+{% block content %}
+
+{% if not sheets %}
+<div class="alert alert-warning">暂无该日期的回测数据。</div>
+{% else %}
+
+<!-- 日期导航 -->
+{{ date_nav(prev_date, next_date, all_dates, current_date, "/backtest/") }}
+
+<!-- Tab 切换 -->
+<ul class="nav nav-pills nav-fill mb-4" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" id="tab-backtest" data-bs-toggle="pill" data-bs-target="#pane-backtest" type="button" role="tab">
+      📅 昨日选股 → 今日验证
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="tab-today" data-bs-toggle="pill" data-bs-target="#pane-today" type="button" role="tab">
+      📸 {{ current_date }} 当日快照
+    </button>
+  </li>
+</ul>
+
+<!-- ── 收益率字段名集合，用于自动格式化为百分比 ── -->
+{% set pct_cols = ['今日收益率', '总收益', '该行业收益', '其余收益'] %}
+
+<div class="tab-content">
+
+<!-- ============================================================ -->
+<!-- Tab 1：昨日选股 → 今日验证 -->
+<!-- ============================================================ -->
+<div class="tab-pane fade show active" id="pane-backtest" role="tabpanel">
+
+<!-- 三阶胜率 -->
+{% set wr = sheets.get('win_rates') %}
+{% if wr %}
+<div class="card mb-4">
+  <div class="card-header"><strong>📊 三阶胜率全景对比</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-dark table-striped mb-0">
+        <thead><tr>{% for col in wr.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in wr.rows %}
+          <tr>{% for col in wr.cols %}<td>{{ row[col] }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 回测行业分布 + 柱状图 -->
+{% set ind = sheets.get('industry_dist') %}
+{% if ind %}
+<div class="row g-3 mb-4">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header"><strong>📊 回测行业分布</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:500px">
+          <table class="table table-dark table-striped mb-0">
+            <thead><tr>{% for col in ind.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for row in ind.rows %}
+              <tr>{% for col in ind.cols %}<td>{% if col in pct_cols %}{{ row[col] | pct }}{% else %}{{ row[col] }}{% endif %}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header"><strong>📈 行业入选数量</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+      <div class="card-body"><div id="industryChart" style="height:450px;"></div></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 热门拆分（基于当日行业热度 + 回测收益） -->
+{% set hs = sheets.get('hot_split') %}
+{% if hs %}
+<div class="card mb-4">
+  <div class="card-header"><strong>🏆 并列热门拆分对比</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-dark table-striped mb-0">
+        <thead><tr>{% for col in hs.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in hs.rows %}
+          <tr>{% for col in hs.cols %}<td>{% if col in pct_cols %}{{ row[col] | pct }}{% else %}{{ row[col] }}{% endif %}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 回测明细 + 直方图 -->
+{% set bt = sheets.get('backtest') %}
+{% if bt %}
+{% set returns = bt.rows|map(attribute='今日收益率')|select('number')|list %}
+{% if returns|length > 1 %}
+<div class="card mb-4">
+  <div class="card-header"><strong>📊 日收益率分布</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+  <div class="card-body">
+    <div id="returnHistogram" style="height:300px;"></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-header"><strong>📋 回测明细</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+  <div class="card-body p-0">
+    <div class="table-responsive" style="max-height:600px">
+      <table class="table table-dark table-hover mb-0">
+        <thead><tr>{% for col in bt.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in bt.rows %}
+          <tr class="{{ 'table-success' if row.get('回测结果') == '成功' else 'table-danger' if row.get('回测结果') == '失败' }}">
+            {% for col in bt.cols %}<td>{% if col in pct_cols %}{{ row[col] | pct }}{% else %}{{ row[col] }}{% endif %}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+</div><!-- /#pane-backtest -->
+
+<!-- ============================================================ -->
+<!-- Tab 2：当日快照 -->
+<!-- ============================================================ -->
+<div class="tab-pane fade" id="pane-today" role="tabpanel">
+
+<!-- 当日策略分布 -->
+{% set td = sheets.get('today_dist') %}
+{% if td %}
+<div class="card mb-4">
+  <div class="card-header"><strong>📊 当日最新策略分布</strong><span class="badge bg-warning ms-2">当日快照</span></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-dark table-striped mb-0">
+        <thead><tr>{% for col in td.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in td.rows %}
+          <tr>{% for col in td.cols %}<td>{{ row[col] }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- 当日行业热度 + 饼图 -->
+{% set ti = sheets.get('today_industry') %}
+{% if ti %}
+<div class="row g-3 mb-4">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header"><strong>🔥 当日最新行业热度</strong><span class="badge bg-warning ms-2">当日快照</span></div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:400px">
+          <table class="table table-dark table-striped mb-0">
+            <thead><tr>{% for col in ti.cols %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for row in ti.rows %}
+              <tr>{% for col in ti.cols %}<td>{{ row[col] }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header"><strong>🧩 行业热度饼图</strong><span class="badge bg-warning ms-2">当日快照</span></div>
+      <div class="card-body"><div id="industryPieChart" style="height:400px;"></div></div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+</div><!-- /#pane-today -->
+
+</div><!-- /.tab-content -->
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% set ind = sheets.get('industry_dist') %}
+{% if ind %}
+renderIndustryBar('industryChart', {{ ind.rows|tojson|safe }});
+{% endif %}
+{% set ti = sheets.get('today_industry') %}
+{% if ti %}
+renderIndustryPie('industryPieChart', {{ ti.rows|tojson|safe }});
+{% endif %}
+{% set bt = sheets.get('backtest') %}
+{% if bt %}
+{% set returns = bt.rows|map(attribute='今日收益率')|select('number')|list %}
+{% if returns|length > 1 %}
+renderReturnHistogram('returnHistogram', {{ returns|tojson|safe }});
+{% endif %}
+{% endif %}
+
+// ── Tab 切换时 resize 图表（隐藏态图表需 resize 才能正确显示） ──
+document.addEventListener('shown.bs.tab', function(e) {
+  setTimeout(function() {
+    if (e.target.id === 'tab-today') {
+      var el = document.getElementById('industryPieChart');
+      if (el) { var c = echarts.getInstanceByDom(el); if (c) c.resize(); }
+    } else if (e.target.id === 'tab-backtest') {
+      ['industryChart', 'returnHistogram'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) { var c = echarts.getInstanceByDom(el); if (c) c.resize(); }
+      });
+    }
+  }, 80);
+});
+</script>
+{% endblock %}

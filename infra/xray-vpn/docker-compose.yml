@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  xray:
+    image: teddysun/xray:latest
+    container_name: xray-vpn
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./xray:/etc/xray:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro

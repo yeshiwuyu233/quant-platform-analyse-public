@@ -1,0 +1,43 @@
+{% macro date_nav(prev_date, next_date, all_dates, current_date, base_path) %}
+{% set md = group_dates_by_month(all_dates, current_date) %}
+{% if md %}
+<div class="date-nav-container">
+  <!-- 月份下拉 -->
+  <div class="date-nav-month">
+    <select class="form-select form-select-sm" onchange="window.location.href='{{ base_path }}' + this.value">
+      {% for m in md.months %}
+      <option value="{{ md.month_first[m] }}" {% if m == md.current_month %}selected{% endif %}>
+        {{ md.month_options[m] }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- 日期选择行：箭头 + pills + 箭头 -->
+  <div class="date-nav-row">
+    {% if prev_date %}
+    <a href="{{ base_path }}{{ prev_date }}" class="btn btn-outline-secondary btn-sm date-nav-arrow">◀</a>
+    {% else %}
+    <span class="btn btn-outline-secondary btn-sm disabled date-nav-arrow">◀</span>
+    {% endif %}
+
+    <div class="date-nav-days">
+      {% for d in md.month_dates %}
+      <a href="{{ base_path }}{{ d }}" class="btn btn-sm {% if d == current_date %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        {{ d[2:] }}
+      </a>
+      {% endfor %}
+    </div>
+
+    {% if next_date %}
+    <a href="{{ base_path }}{{ next_date }}" class="btn btn-outline-secondary btn-sm date-nav-arrow">▶</a>
+    {% else %}
+    <span class="btn btn-outline-secondary btn-sm disabled date-nav-arrow">▶</span>
+    {% endif %}
+  </div>
+
+  <!-- 日期标签 -->
+  <div class="date-nav-label">{{ md.month_label }}{{ current_date[2:] }}日</div>
+</div>
+{% endif %}
+{% endmacro %}
