@@ -1,5 +1,5 @@
 """
-每日数据爬虫 — 从配置的数据源抓取股票准确率数据。
+每日数据爬虫 — 从 data.example.com 抓取股票准确率数据。
 
 使用宿主机 Chrome 渲染服务（crawler_service.py :14431）获取完整 HTML：
 - 支持 JS 渲染（指标历史列需要）
@@ -41,7 +41,6 @@ PASSWORD = env_or_default("CRAWLER_PASS", "change-me")
 MIN_MARKET_ROWS = int(env_or_default("CRAWLER_MIN_ROWS", "4000"))
 DIRECT_IP = env_or_default("CRAWLER_DIRECT_IP", "203.0.113.10")
 DIRECT_HOST = env_or_default("CRAWLER_DIRECT_HOST", "data.example.com")
-SOURCE_HOST = env_or_default("CRAWLER_SOURCE_HOST", DIRECT_HOST)
 
 # 宿主机 Chrome 渲染服务（Docker 网关地址）
 CRAWLER_SERVICE = "http://172.18.0.1:14431/fetch"
@@ -53,8 +52,8 @@ MASTER_FILE = os.path.join(PROJECT_ROOT, "Whole Market.xlsx")
 
 
 def build_target_url(target_date: str) -> str:
-    """Build the configured market data URL for YYYYMMDD."""
-    return f"https://{SOURCE_HOST}/{target_date}/accuracy_markov_lyz_x.html"
+    """Build the standard quant-win URL for YYYYMMDD."""
+    return f"https://data.example.com/{target_date}/accuracy_markov_lyz_x.html"
 
 
 def validate_target_date(target_date: str) -> str:

@@ -5,7 +5,7 @@ mode: Rule
 log-level: info
 
 proxies:
-  - name: VPN-example
+  - name: VPN-yeshiwuyu
     type: vless
     server: your-domain.com
     port: 5443
@@ -18,7 +18,7 @@ proxy-groups:
   - name: 🚀 节点选择
     type: select
     proxies:
-      - VPN-example
+      - VPN-yeshiwuyu
       - DIRECT
       - REJECT
 
