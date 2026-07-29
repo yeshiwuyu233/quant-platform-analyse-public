@@ -1,4 +1,4 @@
-# ── 数据文件（不上传） ──
+# ── 数据文件（不上传到代码 Git；private GitHub sync 另行全量复制） ──
 *.xlsx
 *.xls
 *.csv
@@ -6,8 +6,20 @@
 *.db
 *.sqlite
 market.db
+data/
+reports/
+index_cache/
 
-# ── 备份 ──
+# ── 运行状态 ──
+pipeline_status.json
+history.json
+weekly_trend.json
+.degrade_state.json
+quant_web/static/guardian_last_seen
+quant_web/static/.validation_last
+.locks/
+
+# ── 备份与归档 ──
 *.bak
 *.bak.*
 *.cbak
@@ -21,6 +33,9 @@ backups/
 .env.local
 *.key
 *.pem
+quant_web/.env
+quant_web/users.db
+quant_web/login_log.json
 
 # ── Python ──
 __pycache__/
@@ -42,13 +57,13 @@ Thumbs.db
 
 # ── 日志 ──
 *.log
-login_log.json
 
-# ── Claude ──
+# ── Claude / agent local state ──
 .claude/
 .claude.json
+.superpowers/
 
 # ── 临时文件 ──
 *.tmp
 *.swp
-.locks/
+.upload_temp_*.csv
