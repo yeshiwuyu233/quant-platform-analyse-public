@@ -170,6 +170,15 @@ class TestDegradeMethods(unittest.TestCase):
         self.assertEqual(_calls(failure_handler, "schedule_evening_retry"), [])
         self.assertEqual(len(_calls(failure_handler, "exit")), 1)
 
+    def test_wrapper_notification_uses_run_pipeline_template(self):
+        source = PIPELINE_WRAPPER.read_text()
+        send_notification = _function_node(source, "send_notification")
+        strings = _constant_strings(send_notification)
+
+        self.assertIn("from quant_web.run_pipeline import _gather_email_data, send_notification", "\n".join(strings))
+        self.assertIn("PIPELINE_NOTIFY_SOURCE=cron_wrapper", strings)
+        self.assertEqual(_calls(send_notification, "send_email"), [])
+
 
 if __name__ == "__main__":
     unittest.main()
