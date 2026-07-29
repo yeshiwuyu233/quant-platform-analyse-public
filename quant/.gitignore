@@ -27,6 +27,7 @@ quant_web/static/.validation_last
 *.corrupted*
 *.auto_repair*
 backups/
+archive/
 
 # ── 配置/密钥（不上传） ──
 .env
