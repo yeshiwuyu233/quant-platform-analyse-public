@@ -6,7 +6,8 @@ if [ $# -eq 0 ] || [ "$1" = "web" ]; then
   cd "$(dirname "$0")"  # 切到 quant_web 目录，使 import data_service 能找到
   exec gunicorn app:app \
     --bind 0.0.0.0:5000 \
-    --workers 1 \
+    --workers 2 \
+    --threads 2 \
     --timeout 120 \
     --access-logfile - \
     --error-logfile - \
