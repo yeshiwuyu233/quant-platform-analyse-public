@@ -10,6 +10,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -193,6 +194,66 @@ def compare_frames(left: pd.DataFrame, right: pd.DataFrame) -> None:
         rtol=1e-12,
         atol=1e-12,
     )
+
+
+def compare_reference_frames(
+    reference: pd.DataFrame, fetched: pd.DataFrame
+) -> None:
+    """Require a fetched snapshot to match a preserved reference exactly.
+
+    Unlike ``compare_frames`` this reports the first actionable difference so
+    a recovery run can stop before writing production storage.
+    """
+    canonical_reference = canonicalize_dataframe(reference).reset_index(drop=True)
+    canonical_fetched = canonicalize_dataframe(fetched).reset_index(drop=True)
+
+    for label, frame in (("参考", canonical_reference), ("抓取", canonical_fetched)):
+        if frame["代码"].duplicated().any():
+            duplicate = frame.loc[frame["代码"].duplicated(), "代码"].iloc[0]
+            raise ValueError(f"{label}快照存在重复代码: {duplicate}")
+
+    reference_codes = canonical_reference["代码"].tolist()
+    fetched_codes = canonical_fetched["代码"].tolist()
+    if set(reference_codes) != set(fetched_codes):
+        missing = sorted(set(reference_codes) - set(fetched_codes))
+        extra = sorted(set(fetched_codes) - set(reference_codes))
+        raise ValueError(
+            "市场快照代码集合不一致: "
+            f"缺少={missing[:5]} 多出={extra[:5]}"
+        )
+    if len(canonical_reference) != len(canonical_fetched):
+        raise ValueError(
+            "市场快照行数不一致: "
+            f"参考={len(canonical_reference)} 抓取={len(canonical_fetched)}"
+        )
+    if reference_codes != fetched_codes:
+        first = next(
+            i for i, (left, right) in enumerate(zip(reference_codes, fetched_codes))
+            if left != right
+        )
+        raise ValueError(
+            "市场快照代码顺序不一致: "
+            f"行={first} 参考={reference_codes[first]} 抓取={fetched_codes[first]}"
+        )
+
+    for row_idx, code in enumerate(reference_codes):
+        for column in MARKET_COLUMNS:
+            left = canonical_reference.at[row_idx, column]
+            right = canonical_fetched.at[row_idx, column]
+            if pd.isna(left) and pd.isna(right):
+                continue
+            if pd.isna(left) != pd.isna(right):
+                equal = False
+            elif pd.api.types.is_numeric_dtype(canonical_reference[column]):
+                equal = bool(np.isclose(float(left), float(right), rtol=1e-12, atol=1e-12))
+            else:
+                equal = left == right
+            if not equal:
+                raise ValueError(
+                    "市场快照字段不一致: "
+                    f"行={row_idx} 代码={code} 字段={column} "
+                    f"参考={left!r} 抓取={right!r}"
+                )
 
 
 def _validated_frame(df: pd.DataFrame, min_rows: int) -> pd.DataFrame:
