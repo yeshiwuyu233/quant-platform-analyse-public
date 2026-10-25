@@ -111,19 +111,24 @@ def refresh_market_cache(full_date: str) -> bool:
 
 
 def refresh_index_cache() -> bool:
-    """Best-effort refresh of CSI1000 index data used by history charts."""
+    """Best-effort refresh of CSI500 and CSI1000 history chart data."""
     try:
         try:
             from . import index_service
         except Exception:
             import index_service
-        counts = index_service.update_index_cache(symbols=["sh000852"])
-        count = counts.get("sh000852", 0)
-        log.info(">>> 中证1000指数缓存已刷新: %s rows", count)
-        return True
     except Exception as e:
-        log.warning("[!] 中证1000指数缓存刷新失败: %s", e)
+        log.warning("[!] 指数缓存模块加载失败: %s", e)
         return False
+    success = True
+    for symbol, name in (("sh000905", "中证500"), ("sh000852", "中证1000")):
+        try:
+            counts = index_service.update_index_cache(symbols=[symbol])
+            log.info(">>> %s指数缓存已刷新: %s rows", name, counts.get(symbol, 0))
+        except Exception as e:
+            log.warning("[!] %s指数缓存刷新失败: %s", name, e)
+            success = False
+    return success
 
 
 # ═══════════════════════════════════════════════
@@ -414,7 +419,10 @@ def send_notification(success: bool, degraded: bool, data: dict, elapsed: float,
         log.info("[通知] SMTP 未配置，跳过邮件通知")
         return
 
-    notify_to = os.environ.get("NOTIFY_EMAIL", smtp_user)
+    notify_to = (os.environ.get("NOTIFY_EMAIL") or smtp_user).strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+", notify_to):
+        log.warning("[通知] SMTP 收件人未配置或格式无效，跳过邮件通知")
+        return
 
     # 确定状态 emoji
     if not success:

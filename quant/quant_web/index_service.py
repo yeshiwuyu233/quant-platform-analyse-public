@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import os
+import tempfile
 import time
 from typing import Iterable
 
@@ -21,6 +22,7 @@ TENCENT_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/kline/kline"
 INDEX_SYMBOLS = {
     "sh000001": {"name": "上证指数", "secid": "1.000001"},
     "sh000300": {"name": "沪深300", "secid": "1.000300"},
+    "sh000905": {"name": "中证500", "secid": "1.000905"},
     "sh000852": {"name": "中证1000", "secid": "1.000852"},
     "sh000985": {"name": "中证全指", "secid": "1.000985"},
     "sz399001": {"name": "深证成指", "secid": "0.399001"},
@@ -34,9 +36,10 @@ def parse_eastmoney_klines(payload: dict) -> list[dict]:
     rows = []
     for item in klines:
         parts = str(item).split(",")
-        if len(parts) < 8:
+        # f58 is amplitude; the daily percentage change is f59.
+        if len(parts) < 9:
             continue
-        date_raw, open_, close, high, low, volume, amount, pct_chg = parts[:8]
+        date_raw, open_, close, high, low, volume, amount, _amplitude, pct_chg = parts[:9]
         rows.append({
             "date": date_raw.replace("-", ""),
             "open": float(open_),
@@ -89,7 +92,7 @@ def fetch_index_history(symbol: str, beg: str = "19900101", end: str = "20500101
     params = {
         "secid": INDEX_SYMBOLS[symbol]["secid"],
         "fields1": "f1,f2,f3,f4,f5",
-        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59",
         "klt": "101",
         "fqt": "0",
         "beg": beg,
@@ -172,11 +175,19 @@ def write_cache(symbol: str, rows: Iterable[dict], cache_dir: str = INDEX_CACHE_
     os.makedirs(cache_dir, exist_ok=True)
     path = cache_path(symbol, cache_dir)
     fieldnames = ["date", "open", "close", "high", "low", "volume", "amount", "pct_chg"]
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k, "") for k in fieldnames})
+    fd, temp_path = tempfile.mkstemp(prefix=f".{symbol}.", suffix=".tmp", dir=cache_dir)
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({k: row.get(k, "") for k in fieldnames})
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
     return path
 
 

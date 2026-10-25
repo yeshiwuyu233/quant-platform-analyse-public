@@ -127,18 +127,30 @@ function renderAlphaTrend(domId, records) {
     window.addEventListener('resize', () => chart.resize());
 }
 
-/* ── 下一日达标数 ────────────────────── */
-function renderNextDayTrend(domId, records) {
+/* ── 下一日达标数与指数走势 ────────────── */
+function renderNextDayTrend(domId, records, indexTrend) {
     const el = document.getElementById(domId);
     if (!el) return;
     const chart = echarts.init(el, 'dark');
     const dates = records.map(r => r.date);
+    const csi500 = indexTrend && indexTrend.csi500 || [];
+    const csi1000 = indexTrend && indexTrend.csi1000 || [];
+    const compact = el.clientWidth < 600;
     chart.setOption({
         tooltip: { trigger: 'axis' },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
-        yAxis: { type: 'value', minInterval: 1 },
+        legend: { top: 6, itemWidth: 18, itemHeight: 10, itemGap: compact ? 12 : 24 },
+        grid: { left: compact ? 8 : 20, right: compact ? 10 : 22, top: 56, bottom: compact ? 58 : 20, containLabel: true },
+        xAxis: { type: 'category', data: dates, axisLabel: { rotate: compact ? 45 : 30, hideOverlap: true } },
+        dataZoom: compact ? [
+            { type: 'inside', xAxisIndex: 0, start: 65, end: 100 },
+            { type: 'slider', xAxisIndex: 0, start: 65, end: 100, height: 18, bottom: 8 }
+        ] : [],
+        yAxis: [
+            { type: 'value', name: compact ? '' : '达标股票数', minInterval: 1 },
+            { type: 'value', name: compact ? '' : '指数点位', scale: true, position: 'right', axisLabel: { formatter: value => Number(value).toLocaleString('zh-CN') } }
+        ],
         series: [{
+            name: '达标股票数',
             type: 'bar',
             data: records.map(r => r.next_10),
             itemStyle: {
@@ -148,6 +160,24 @@ function renderNextDayTrend(domId, records) {
                     { offset: 1, color: '#0a58ca' }
                 ])
             }
+        }, {
+            name: '中证500',
+            type: 'line',
+            yAxisIndex: 1,
+            data: csi500,
+            showSymbol: false,
+            connectNulls: false,
+            lineStyle: { width: 2, color: '#f6c453' },
+            itemStyle: { color: '#f6c453' }
+        }, {
+            name: '中证1000',
+            type: 'line',
+            yAxisIndex: 1,
+            data: csi1000,
+            showSymbol: false,
+            connectNulls: false,
+            lineStyle: { width: 2, color: '#e68bc8' },
+            itemStyle: { color: '#e68bc8' }
         }]
     });
     window.addEventListener('resize', () => chart.resize());
@@ -157,24 +187,34 @@ function buildLowGt1CountRanges(records, minCount = 60) {
     const ranges = [];
     let start = null;
     let end = null;
+    let startIndex = null;
+    let endIndex = null;
 
-    (records || []).forEach(r => {
+    (records || []).forEach((r, index) => {
         const count = Number(r.gt1_count || 0);
         if (count < minCount) {
-            if (!start) start = r.date;
+            if (!start) {
+                start = r.date;
+                startIndex = index;
+            }
             end = r.date;
+            endIndex = index;
             return;
         }
         if (start) {
             ranges.push({
                 start,
                 end,
+                startIndex,
+                endIndex,
                 label: start === end
                     ? `${start} 指标>1数量<${minCount}`
                     : `${start}-${end} 指标>1数量<${minCount}`
             });
             start = null;
             end = null;
+            startIndex = null;
+            endIndex = null;
         }
     });
 
@@ -182,6 +222,8 @@ function buildLowGt1CountRanges(records, minCount = 60) {
         ranges.push({
             start,
             end,
+            startIndex,
+            endIndex,
             label: start === end
                 ? `${start} 指标>1数量<${minCount}`
                 : `${start}-${end} 指标>1数量<${minCount}`
@@ -190,15 +232,43 @@ function buildLowGt1CountRanges(records, minCount = 60) {
     return ranges;
 }
 
-function lowGt1CountMarkArea(records, minCount = 60) {
-    const ranges = buildLowGt1CountRanges(records, minCount);
-    if (!ranges.length) return undefined;
-    return {
-        silent: true,
-        itemStyle: { color: 'rgba(220,53,69,0.12)' },
-        label: { show: true, color: '#f8d7da', fontSize: 10, formatter: '<60' },
-        data: ranges.map(r => [{ xAxis: r.start }, { xAxis: r.end }])
-    };
+function buildShortPositionRanges(records) {
+    const ranges = [];
+    let startIndex = null;
+    (records || []).forEach((record, index) => {
+        if (String(record.futures_position || '').startsWith('做空')) {
+            if (startIndex === null) startIndex = index;
+        } else if (startIndex !== null) {
+            ranges.push({ startIndex, endIndex: index - 1 });
+            startIndex = null;
+        }
+    });
+    if (startIndex !== null) ranges.push({ startIndex, endIndex: records.length - 1 });
+    return ranges;
+}
+
+function applyShortPositionBackground(chart, records) {
+    const ranges = buildShortPositionRanges(records);
+    const grid = chart.getModel().getComponent('grid').coordinateSystem.getRect();
+    const band = grid.width / records.length;
+    chart.setOption({
+        graphic: [{
+            id: 'short-position-bands',
+            type: 'group',
+            silent: true,
+            z: 0,
+            children: ranges.map(range => ({
+                type: 'rect',
+                shape: {
+                    x: grid.x + range.startIndex * band,
+                    y: grid.y,
+                    width: (range.endIndex - range.startIndex + 1) * band,
+                    height: grid.height
+                },
+                style: { fill: 'rgba(220,53,69,0.12)' }
+            }))
+        }]
+    });
 }
 
 function renderLowGt1CountRanges(domId, records, minCount = 60) {
@@ -214,21 +284,19 @@ function renderLowGt1CountRanges(domId, records, minCount = 60) {
         .join('');
 }
 
-const WEEKLY_TIMING_FUTURES_LABEL = '>=60持有80%前三行业+20%做多中证1000股指期货\n<60持有20%做空中证1000股指期货(5倍)';
 const WEEKLY_STRATEGY_SERIES = [
     {
-        name: '前三行业',
+        name: '前三行业（每日）',
         color: '#0d6efd',
         symbol: 'circle',
         symbolSize: 5,
         width: 2,
         navKey: 'top_nav',
         drawdownKey: 'top_drawdown',
-        areaColor: 'rgba(13,110,253,0.16)',
-        markLowGt1: true
+        areaColor: 'rgba(13,110,253,0.16)'
     },
     {
-        name: '前三行业(指标>1数量>=60)',
+        name: '前三行业（≥60）',
         color: '#20c997',
         symbol: 'diamond',
         symbolSize: 6,
@@ -238,12 +306,20 @@ const WEEKLY_STRATEGY_SERIES = [
         areaColor: 'rgba(32,201,151,0.14)'
     },
     {
-        name: WEEKLY_TIMING_FUTURES_LABEL,
+        name: '股指择时（±50%）',
         color: '#6f42c1',
         symbol: 'none',
         width: 2,
-        navKey: 'long_short_top_nav',
-        drawdownKey: 'long_short_top_drawdown'
+        navKey: 'futures_timing_nav',
+        drawdownKey: 'futures_timing_drawdown'
+    },
+    {
+        name: '前三行业择时（100%）',
+        color: '#f783ac',
+        symbol: 'none',
+        width: 2,
+        navKey: 'stock_timing_nav',
+        drawdownKey: 'stock_timing_drawdown'
     },
     {
         name: '冷门行业',
@@ -282,7 +358,7 @@ function weeklyStrategyPalette() {
     return WEEKLY_STRATEGY_SERIES.map(s => s.color);
 }
 
-function buildWeeklyStrategySeries(records, valueKey, weakGt1MarkArea, includeArea) {
+function buildWeeklyStrategySeries(records, valueKey, includeArea) {
     return WEEKLY_STRATEGY_SERIES.map(config => {
         const series = {
             name: config.name,
@@ -297,7 +373,6 @@ function buildWeeklyStrategySeries(records, valueKey, weakGt1MarkArea, includeAr
         };
         if (config.symbolSize) series.symbolSize = config.symbolSize;
         if (includeArea && config.areaColor) series.areaStyle = { color: config.areaColor };
-        if (config.markLowGt1) series.markArea = weakGt1MarkArea;
         return series;
     });
 }
@@ -308,7 +383,6 @@ function renderWeeklyStrategyNav(domId, records) {
     if (!el || !records || !records.length) return;
     const chart = echarts.init(el, 'dark');
     const dates = records.map(r => r.date);
-    const weakGt1MarkArea = lowGt1CountMarkArea(records, 60);
     chart.setOption({
         color: weeklyStrategyPalette(),
         tooltip: {
@@ -320,11 +394,15 @@ function renderWeeklyStrategyNav(domId, records) {
             top: 0
         },
         grid: { left: '3%', right: '4%', top: 74, bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+        xAxis: { type: 'category', boundaryGap: true, data: dates, axisLabel: { rotate: 30 } },
         yAxis: { type: 'value', min: 'dataMin' },
-        series: buildWeeklyStrategySeries(records, 'navKey', weakGt1MarkArea, false)
+        series: buildWeeklyStrategySeries(records, 'navKey', false)
     });
-    window.addEventListener('resize', () => chart.resize());
+    applyShortPositionBackground(chart, records);
+    window.addEventListener('resize', () => {
+        chart.resize();
+        applyShortPositionBackground(chart, records);
+    });
 }
 
 /* ── 礼拜攻势回撤 ───────────────────── */
@@ -333,7 +411,6 @@ function renderWeeklyStrategyDrawdown(domId, records) {
     if (!el || !records || !records.length) return;
     const chart = echarts.init(el, 'dark');
     const dates = records.map(r => r.date);
-    const weakGt1MarkArea = lowGt1CountMarkArea(records, 60);
     chart.setOption({
         color: weeklyStrategyPalette(),
         tooltip: {
@@ -345,11 +422,80 @@ function renderWeeklyStrategyDrawdown(domId, records) {
             top: 0
         },
         grid: { left: '3%', right: '4%', top: 74, bottom: '3%', containLabel: true },
-        xAxis: { type: 'category', data: dates, axisLabel: { rotate: 30 } },
+        xAxis: { type: 'category', boundaryGap: true, data: dates, axisLabel: { rotate: 30 } },
         yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value}%' } },
-        series: buildWeeklyStrategySeries(records, 'drawdownKey', weakGt1MarkArea, true)
+        series: buildWeeklyStrategySeries(records, 'drawdownKey', true)
+    });
+    applyShortPositionBackground(chart, records);
+    window.addEventListener('resize', () => {
+        chart.resize();
+        applyShortPositionBackground(chart, records);
+    });
+}
+
+function renderDailyIndexStrategyNav(domId, records) {
+    const el = document.getElementById(domId);
+    if (!el || !records || !records.length) return;
+    const chart = echarts.init(el, 'dark');
+    chart.setOption({
+        tooltip: { trigger: 'axis', valueFormatter: v => Number(v).toFixed(6) },
+        legend: { data: ['日频策略净值'], top: 0 },
+        grid: { left: '3%', right: '4%', top: 48, bottom: '8%', containLabel: true },
+        xAxis: { type: 'category', boundaryGap: false, data: records.map(r => r.date), axisLabel: { rotate: 30 } },
+        yAxis: { type: 'value', min: 'dataMin', scale: true },
+        series: [{
+            name: '日频策略净值', type: 'line', data: records.map(r => r.nav),
+            showSymbol: false, smooth: false, lineStyle: { width: 2, color: '#6f42c1' },
+            itemStyle: { color: '#6f42c1' }, areaStyle: { color: 'rgba(111,66,193,0.12)' }
+        }]
     });
     window.addEventListener('resize', () => chart.resize());
+}
+
+function renderDailyIndexStrategyDrawdown(domId, records) {
+    const el = document.getElementById(domId);
+    if (!el || !records || !records.length) return;
+    const chart = echarts.init(el, 'dark');
+    chart.setOption({
+        tooltip: { trigger: 'axis', valueFormatter: v => Number(v).toFixed(2) + '%' },
+        legend: { data: ['日频策略回撤'], top: 0 },
+        grid: { left: '3%', right: '4%', top: 48, bottom: '8%', containLabel: true },
+        xAxis: { type: 'category', boundaryGap: false, data: records.map(r => r.date), axisLabel: { rotate: 30 } },
+        yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value}%' } },
+        series: [{
+            name: '日频策略回撤', type: 'line', data: records.map(r => r.drawdown),
+            showSymbol: false, smooth: false, lineStyle: { width: 2, color: '#dc3545' },
+            itemStyle: { color: '#dc3545' }, areaStyle: { color: 'rgba(220,53,69,0.12)' }
+        }]
+    });
+    window.addEventListener('resize', () => chart.resize());
+}
+
+function initWeeklyHistoryTable(records) {
+    const table = document.getElementById('weeklyHistoryTable');
+    if (!table) return;
+    const byDate = new Map((records || []).map(record => [record.date_raw, record]));
+    const buttons = [...document.querySelectorAll('[data-history-metric]')];
+    const showMetric = metric => {
+        for (const row of table.tBodies[0].rows) {
+            const record = byDate.get(row.dataset.historyDate);
+            if (!record) continue;
+            for (const cell of row.querySelectorAll('[data-series-key]')) {
+                const value = record[`${cell.dataset.seriesKey}_${metric}`];
+                cell.textContent = value == null || !Number.isFinite(Number(value))
+                    ? '-'
+                    : metric === 'nav' ? Number(value).toFixed(6) : `${Number(value).toFixed(2)}%`;
+            }
+        }
+        for (const button of buttons) {
+            const active = button.dataset.historyMetric === metric;
+            button.classList.toggle('btn-light', active);
+            button.classList.toggle('btn-outline-light', !active);
+            button.setAttribute('aria-pressed', String(active));
+        }
+    };
+    buttons.forEach(button => button.addEventListener('click', () => showMetric(button.dataset.historyMetric)));
+    showMetric('nav');
 }
 
 /* ── 礼拜攻势策略分组透析图 ──────────── */

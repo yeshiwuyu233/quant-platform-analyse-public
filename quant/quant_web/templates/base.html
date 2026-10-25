@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>量化分析系统</title>
     <link href="{{ url_for('static', filename='bootstrap.min.css') }}?v=2" rel="stylesheet">
-    <link href="{{ url_for('static', filename='style.css') }}?v=6" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style.css') }}?v=7" rel="stylesheet">
 
 </head>
 <body>
@@ -29,6 +29,7 @@
                     <a href="/weekly" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/weekly') else '' }}">礼拜攻势</a>
                     <a href="/history" class="list-group-item list-group-item-action {{ 'active' if request.path == '/history' else '' }}">历史趋势</a>
                     <a href="/screener" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/screener') else '' }}">选股筛选</a>
+                    <a href="/vpn/" class="list-group-item list-group-item-action">VPN 设备管理</a>
                 </nav>
                 <div class="mt-auto">
                     <div class="px-3 pb-2 pt-2">
@@ -68,7 +69,7 @@
     </script>
     <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='echarts.min.js') }}?v=7"></script>
-    <script src="{{ url_for('static', filename='charts.js') }}?v=15"></script>
+    <script src="{{ url_for('static', filename='charts.js', v=static_version('charts.js')) }}"></script>
 
     {% block scripts %}{% endblock %}
 </body>

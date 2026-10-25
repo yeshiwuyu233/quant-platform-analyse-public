@@ -942,6 +942,15 @@ def inject_current_user():
     return {"current_user": session.get("user")}
 
 
+@app.template_global("static_version")
+def static_version(filename):
+    """Change an asset URL whenever its deployed file changes."""
+    try:
+        return os.stat(os.path.join(app.static_folder, filename)).st_mtime_ns
+    except OSError:
+        return 0
+
+
 @app.template_global("csrf_token")
 def csrf_token():
     """Template function to expose CSRF token."""
@@ -1007,6 +1016,8 @@ def login():
                        or request.remote_addr
                        or "unknown")
             _log_login(username, user["name"], real_ip, ua_info, client_info)
+            session["vpn_user_id"] = _vpn_resolve_user(os.path.join(os.path.dirname(__file__), "users.db"), user["username"])["id"]
+            session["vpn_auth_stamp"] = _vpn_auth_stamp(os.path.join(os.path.dirname(__file__), "users.db"), session["vpn_user_id"], app.secret_key)
             session["user"] = {"username": username, "role": user["role"], "name": user["name"]}
             next_page = request.args.get("next") or "/"
             return redirect(next_page)
@@ -1319,9 +1330,12 @@ def weekly(date=None):
 @app.route("/history")
 @login_required
 def history():
+    records = ds.get_history_data()
     return render_template("history.html",
-                           records=ds.get_history_data(),
+                           records=records,
+                           index_trend=ds.get_history_index_trend(records),
                            weekly_strategy=ds.get_weekly_strategy_history(),
+                           daily_index_strategy=ds.get_daily_index_strategy_history(),
                            all_dates=ds.get_available_dates())
 
 
@@ -1590,6 +1604,12 @@ def admin_health_action(action):
         flash("Operation triggered")
     return redirect(url_for("admin_health"))
 
+
+
+# VPN portal shares the canonical website login; internal API uses a private Unix socket.
+from vpn_portal import register_vpn_portal, resolve_user as _vpn_resolve_user
+from accounts import auth_stamp as _vpn_auth_stamp
+register_vpn_portal(app, os.path.join(os.path.dirname(__file__), 'users.db'), '/app/.vpn-internal/portal.sock')
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

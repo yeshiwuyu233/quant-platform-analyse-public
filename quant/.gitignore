@@ -4,6 +4,8 @@
 *.csv
 *.json
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 market.db
 data/

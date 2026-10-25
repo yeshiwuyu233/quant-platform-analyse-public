@@ -84,12 +84,18 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
             min_gt1_count=60,
             index_rows=index_rows,
             date_sequence=date_sequence,
+            accuracy_by_date={"0401": 60.0, "0402": 30.0},
         )
 
         self.assertEqual(len(rows), 2)
+        self.assertEqual((rows[0]['exit_date_raw'], rows[0]['exit_date']), ('0406', '04/06'))
+        self.assertEqual((rows[1]['exit_date_raw'], rows[1]['exit_date']), ('0407', '04/07'))
         self.assertAlmostEqual(rows[0]["top_return"], 0.8)
         self.assertAlmostEqual(rows[0]["filtered_top_return"], 0.8)
-        self.assertAlmostEqual(rows[0]["long_short_top_return"], 12.8502, places=4)
+        self.assertAlmostEqual(rows[0]["futures_timing_return"], 30.5255, places=4)
+        self.assertAlmostEqual(rows[0]["stock_timing_return"], 0.8, places=4)
+        self.assertEqual(rows[0]["futures_position"], "做多50%")
+        self.assertEqual(rows[0]["stock_position"], "做多100%")
         self.assertTrue(rows[0]["passes_filter"])
         self.assertAlmostEqual(rows[0]["top_nav"], 1.051946, places=6)
         self.assertAlmostEqual(rows[0]["filtered_top_nav"], 1.122102, places=6)
@@ -100,10 +106,14 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
 
         self.assertAlmostEqual(rows[1]["top_return"], -10.0)
         self.assertAlmostEqual(rows[1]["filtered_top_return"], 0.0)
-        self.assertAlmostEqual(rows[1]["long_short_top_return"], -31.769, places=4)
+        self.assertAlmostEqual(rows[1]["futures_timing_return"], -15.8845, places=4)
+        self.assertAlmostEqual(rows[1]["stock_timing_return"], 0.0)
+        self.assertEqual(rows[1]["futures_position"], "做空50%")
+        self.assertEqual(rows[1]["stock_position"], "空仓")
         self.assertFalse(rows[1]["passes_filter"])
         self.assertAlmostEqual(rows[1]["filtered_top_nav"], 1.122102, places=6)
-        self.assertAlmostEqual(rows[1]["long_short_top_nav"], 1.057293, places=6)
+        self.assertGreater(rows[1]["stock_timing_nav"], 1.0)
+        self.assertGreater(rows[1]["futures_timing_nav"], 1.0)
         self.assertAlmostEqual(rows[1]["top_nav"], 1.038562, places=6)
         self.assertAlmostEqual(rows[1]["top_drawdown"], -1.2723, places=4)
         self.assertAlmostEqual(rows[1]["cold_drawdown"], -0.3685, places=4)
@@ -143,6 +153,7 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
             min_gt1_count=60,
             index_rows=index_rows,
             date_sequence=["0401", "0402", "0403", "0404", "0405", "0406"],
+            accuracy_by_date={"0401": 78.0},
         )
 
         self.assertEqual(len(rows), 1)
@@ -150,6 +161,18 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["top_nav"], 1.02)
         self.assertAlmostEqual(rows[0]["standard_nav"], 1.01)
         self.assertAlmostEqual(rows[0]["cold_nav"], 0.99)
+        self.assertAlmostEqual(rows[0]["stock_timing_return"], 10.0)
+        self.assertEqual(rows[0]["futures_position"], "做多50%")
+
+    def test_timing_thresholds_are_independent_and_missing_accuracy_stays_cash(self):
+        from quant_web.data_service import _timing_positions
+
+        self.assertEqual(_timing_positions(59, 60.0, 60), (-0.5, False))
+        self.assertEqual(_timing_positions(60, 45.0, 60), (-0.5, False))
+        self.assertEqual(_timing_positions(60, 45.01, 60), (0.5, True))
+        self.assertEqual(_timing_positions(60, 78.0, 60), (0.5, True))
+        self.assertEqual(_timing_positions(60, 78.01, 60), (-0.5, False))
+        self.assertEqual(_timing_positions(60, None, 60), (0.0, False))
 
 
 if __name__ == "__main__":

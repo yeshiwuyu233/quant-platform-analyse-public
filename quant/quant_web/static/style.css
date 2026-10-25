@@ -387,6 +387,7 @@
 
     /* 图表 */
     [id$="Chart"], [id$="chart"] { height: 220px !important; }
+    #nextDayChart { height: 360px !important; }
     #returnHistogram { height: 200px !important; }
     #coldCombinedChart { height: 200px !important; }
 

@@ -4,6 +4,7 @@
 import glob
 import csv
 import json
+import math
 import os
 import re
 from datetime import datetime
@@ -498,6 +499,24 @@ def _standard_gt1_summary(report: dict[str, Any]) -> tuple[Optional[float], int]
     return None, 0
 
 
+def _timing_positions(gt1_count: int, accuracy: Optional[float], min_count: int) -> tuple[float, bool]:
+    """Positions decided at the signal day's close for the next five trading days.
+
+    ``accuracy`` is the accuracy of the *previous* trading day's prediction,
+    measured in the signal day's daily review. A missing accuracy never opens
+    a position when the stock count is at least ``min_count``.
+    """
+    if gt1_count < min_count:
+        return -0.5, False
+    if accuracy is None:
+        return 0.0, False
+    if accuracy <= 45.0:
+        return -0.5, False
+    if accuracy <= 78.0:
+        return 0.5, True
+    return -0.5, False
+
+
 def _pct_value(v: Optional[float]) -> Optional[float]:
     return round(v * 100.0, 4) if v is not None else None
 
@@ -642,6 +661,7 @@ def _build_strategy_sleeve_nav(
     reports: list[tuple[str, dict[str, Any]]],
     index_by_date: dict[str, dict[str, Any]],
     date_sequence: list[str],
+    accuracy_by_date: dict[str, float],
     min_gt1_count: int = 60,
     hold_days: int = 5,
     sleeve_weight: float = 0.2,
@@ -650,7 +670,8 @@ def _build_strategy_sleeve_nav(
     result = {
         'top': {},
         'filtered_top': {},
-        'long_short_top': {},
+        'stock_timing': {},
+        'futures_timing': {},
         'cold': {},
         'standard': {},
     }
@@ -676,11 +697,16 @@ def _build_strategy_sleeve_nav(
         )
         standard_ret, gt1_count = _standard_gt1_summary(report)
         passes_filter = gt1_count >= min_gt1_count
+        futures_weight, stock_long = _timing_positions(
+            gt1_count, accuracy_by_date.get(mmdd), min_gt1_count
+        )
 
         sleeves.append({
             'start_pos': start_pos,
             'exit_date': date_sequence[start_pos + hold_days],
             'passes_filter': passes_filter,
+            'futures_weight': futures_weight,
+            'stock_long': stock_long,
             'top_path': _gross_path_or_summary(_weekly_detail_rows(report, 'top'), top_ret, hold_days),
             'standard_path': _gross_path_or_summary(_weekly_detail_rows(report, 'standard'), standard_ret, hold_days),
             'cold_path': _gross_path_or_summary(_weekly_detail_rows(report, 'cold'), cold_ret, hold_days),
@@ -741,6 +767,10 @@ def _build_strategy_sleeve_nav(
                     alloc_key = (sleeve_id, 'filtered_top')
                     allocations.setdefault(alloc_key, sleeve_weight * nav['filtered_top'])
                     day_ret['filtered_top'] += allocations[alloc_key] * top_delta
+                if sleeve['stock_long']:
+                    alloc_key = (sleeve_id, 'stock_timing')
+                    allocations.setdefault(alloc_key, sleeve_weight * nav['stock_timing'])
+                    day_ret['stock_timing'] += allocations[alloc_key] * top_delta
             if standard_delta is not None:
                 alloc_key = (sleeve_id, 'standard')
                 allocations.setdefault(alloc_key, sleeve_weight * nav['standard'])
@@ -750,19 +780,12 @@ def _build_strategy_sleeve_nav(
                 allocations.setdefault(alloc_key, sleeve_weight * nav['cold'])
                 day_ret['cold'] += allocations[alloc_key] * cold_delta
 
-            combo_delta = None
-            if sleeve['passes_filter']:
-                combo_delta = 0.0
-                if top_delta is not None:
-                    combo_delta += 0.8 * top_delta
-                if index_delta is not None:
-                    combo_delta += 0.2 * index_delta
-            elif index_delta is not None:
-                combo_delta = -1.0 * index_delta
-            if combo_delta is not None:
-                alloc_key = (sleeve_id, 'long_short_top')
-                allocations.setdefault(alloc_key, sleeve_weight * nav['long_short_top'])
-                day_ret['long_short_top'] += allocations[alloc_key] * combo_delta
+            if index_delta is not None and sleeve['futures_weight']:
+                alloc_key = (sleeve_id, 'futures_timing')
+                allocations.setdefault(alloc_key, sleeve_weight * nav['futures_timing'])
+                day_ret['futures_timing'] += (
+                    allocations[alloc_key] * sleeve['futures_weight'] * index_delta
+                )
 
         for key, pnl in day_ret.items():
             nav[key] += pnl
@@ -781,6 +804,7 @@ def _build_weekly_strategy_history(
     min_gt1_count: int = 60,
     index_rows: Optional[list[dict[str, Any]]] = None,
     date_sequence: Optional[list[str]] = None,
+    accuracy_by_date: Optional[dict[str, float]] = None,
 ) -> list[dict[str, Any]]:
     """Build weekly strategy history rows with NAV and drawdown.
 
@@ -791,7 +815,8 @@ def _build_weekly_strategy_history(
     nav = {
         'top': 1.0,
         'filtered_top': 1.0,
-        'long_short_top': 1.0,
+        'stock_timing': 1.0,
+        'futures_timing': 1.0,
         'cold': 1.0,
         'standard': 1.0,
         'csi1000': 1.0,
@@ -799,6 +824,7 @@ def _build_weekly_strategy_history(
     peak = dict(nav)
     rows = []
     index_by_date = {str(row.get('date')): row for row in (index_rows or [])}
+    accuracy_by_date = accuracy_by_date or {}
     date_pos = {d: i for i, d in enumerate(date_sequence or [])}
     completed_signal_dates = [
         mmdd for mmdd, report in reports
@@ -815,6 +841,7 @@ def _build_weekly_strategy_history(
         reports,
         index_by_date,
         date_sequence or [],
+        accuracy_by_date,
         min_gt1_count=min_gt1_count,
     )
 
@@ -833,10 +860,15 @@ def _build_weekly_strategy_history(
         standard_ret, gt1_count = _standard_gt1_summary(report)
         passes_filter = gt1_count >= min_gt1_count
         filtered_top_ret = top_ret if passes_filter and top_ret is not None else 0.0
+        prediction_accuracy = accuracy_by_date.get(mmdd)
+        futures_weight, stock_long = _timing_positions(
+            gt1_count, prediction_accuracy, min_gt1_count
+        )
 
         returns = {
             'top': top_ret or 0.0,
             'filtered_top': filtered_top_ret,
+            'stock_timing': top_ret if stock_long and top_ret is not None else 0.0,
             'cold': cold_ret or 0.0,
             'standard': standard_ret or 0.0,
         }
@@ -865,17 +897,14 @@ def _build_weekly_strategy_history(
                     csi1000_nav, csi1000_drawdown = nav_tuple
 
         index_ret = csi1000_ret or 0.0
-        futures_ret = 0.2 * index_ret if passes_filter else -1.0 * index_ret
-        long_short_top_ret = futures_ret
-        if passes_filter:
-            long_short_top_ret += 0.8 * (top_ret or 0.0)
-        returns['long_short_top'] = long_short_top_ret
+        futures_ret = futures_weight * index_ret
+        returns['futures_timing'] = futures_ret
 
         for key, ret in returns.items():
             nav[key] *= (1.0 + ret)
             peak[key] = max(peak[key], nav[key])
         if strategy_exit_date is not None:
-            for key in ['top', 'filtered_top', 'long_short_top', 'cold', 'standard']:
+            for key in ['top', 'filtered_top', 'stock_timing', 'futures_timing', 'cold', 'standard']:
                 nav_tuple = strategy_sleeve_nav.get(key, {}).get(strategy_exit_date)
                 if nav_tuple is not None:
                     nav[key] = nav_tuple[0]
@@ -887,18 +916,24 @@ def _build_weekly_strategy_history(
         row = {
             'date_raw': mmdd,
             'date': _mmdd_label(mmdd),
+            'exit_date_raw': strategy_exit_date,
+            'exit_date': _mmdd_label(strategy_exit_date) if strategy_exit_date else None,
             'gt1_count': gt1_count,
+            'prediction_accuracy': prediction_accuracy,
+            'stock_position': '做多100%' if stock_long else '空仓',
+            'futures_position': '做多50%' if futures_weight > 0 else ('做空50%' if futures_weight < 0 else '空仓'),
             'passes_filter': passes_filter,
             'top_count': top_count,
             'cold_count': cold_count,
             'top_return': _pct_value(top_ret),
             'filtered_top_return': _pct_value(filtered_top_ret),
-            'long_short_top_return': _pct_value(long_short_top_ret),
+            'stock_timing_return': _pct_value(returns['stock_timing']),
+            'futures_timing_return': _pct_value(futures_ret) if csi1000_ret is not None else None,
             'cold_return': _pct_value(cold_ret),
             'standard_return': _pct_value(standard_ret),
             'csi1000_return': _pct_value(csi1000_ret),
         }
-        for key in ['top', 'filtered_top', 'long_short_top', 'cold', 'standard', 'csi1000']:
+        for key in ['top', 'filtered_top', 'stock_timing', 'futures_timing', 'cold', 'standard', 'csi1000']:
             row[f'{key}_nav'] = round(nav[key], 6)
             strategy_drawdown = None
             if strategy_exit_date is not None and key != 'csi1000':
@@ -931,6 +966,40 @@ def _read_index_cache_rows(symbol: str) -> list[dict[str, Any]]:
     return rows
 
 
+def get_history_index_trend(records: list[dict[str, Any]]) -> dict[str, list[Optional[float]]]:
+    """Align index closes to the history chart's exact trading dates."""
+    trend = {}
+    for key, symbol in (("csi500", "sh000905"), ("csi1000", "sh000852")):
+        closes = {}
+        for row in _read_index_cache_rows(symbol):
+            try:
+                closes[str(row["date"])] = float(row["close"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        trend[key] = [closes.get(str(record.get("date_raw", ""))) for record in records]
+    return trend
+
+
+def _read_previous_prediction_accuracy() -> dict[str, float]:
+    """Read accuracy known at each signal close from that day's daily review."""
+    accuracy_by_date = {}
+    for path in glob_reports("*量化复盘报告.json"):
+        mmdd = os.path.basename(path)[:4]
+        if not mmdd.isdigit():
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                entry = (json.load(f).get("history_entry") or {})
+            if str(entry.get("date_raw", ""))[-4:] != mmdd or not entry.get("prev_date"):
+                continue
+            accuracy = float(entry["all_pct"])
+            if 0 <= accuracy <= 100:
+                accuracy_by_date[mmdd] = accuracy
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            continue
+    return accuracy_by_date
+
+
 @ttl_cache(120)
 def get_weekly_strategy_history(min_gt1_count: int = 60) -> list[dict[str, Any]]:
     files = sorted(glob_reports("*的选股策略礼拜攻势.json"))
@@ -955,7 +1024,122 @@ def get_weekly_strategy_history(min_gt1_count: int = 60) -> list[dict[str, Any]]
         min_gt1_count=min_gt1_count,
         index_rows=_read_index_cache_rows("sh000852"),
         date_sequence=date_sequence,
+        accuracy_by_date=_read_previous_prediction_accuracy(),
     )
+
+
+def _count_qualified_stocks(trade_date: str) -> Optional[int]:
+    """Count stocks with accuracy >60% and indicator >1 on one market snapshot."""
+    if not market_db:
+        return None
+    stored_date = trade_date[4:] if len(trade_date) == 8 and trade_date.startswith("2026") else trade_date
+    frame = market_db.read_market_sheet(stored_date)
+    if frame is None or frame.empty:
+        return None
+    try:
+        accuracy = pd.to_numeric(frame["准确率"], errors="coerce")
+        indicator = pd.to_numeric(frame["今日指标"], errors="coerce")
+        return int(((accuracy > 0.60) & (indicator > 1.0)).sum())
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _daily_index_position(count: Optional[int], accuracy: Optional[float]) -> tuple[int, str]:
+    """Return signed 50% allocation for the daily strategy's signal."""
+    if count is None:
+        return 0, "空仓（缺少股票数）"
+    if count < 60:
+        return -1, "做空50%"
+    if accuracy is None:
+        return 0, "空仓（缺少前日准确率）"
+    if accuracy <= 45.0 or accuracy > 78.0:
+        return -1, "做空50%"
+    return 1, "做多50%"
+
+
+@ttl_cache(120)
+def get_daily_index_strategy_history() -> list[dict[str, Any]]:
+    """Daily CSI1000 spot-proxy strategy: prior-day signal, same-day open-close."""
+    if not market_db:
+        return []
+    try:
+        market_dates = market_db.get_market_dates()
+    except Exception:
+        return []
+    # The currently deployed market DB stores legacy 2026 keys as MMDD;
+    # normalize only this strategy's date window for alignment to index CSVs.
+    market_dates = ["2026" + str(d) if len(str(d)) == 4 else str(d) for d in market_dates]
+    if len(market_dates) < 2:
+        return []
+
+    index_rows = _read_index_cache_rows("sh000852")
+    index_by_date = {}
+    for row in index_rows:
+        try:
+            open_price = float(row["open"])
+            close_price = float(row["close"])
+            if math.isfinite(open_price) and math.isfinite(close_price) and open_price > 0 and close_price > 0:
+                index_by_date[str(row["date"])] = {"open": open_price, "close": close_price}
+        except (KeyError, TypeError, ValueError):
+            continue
+    first_snapshot = min(market_dates)
+    last_snapshot = max(market_dates)
+    # Use the index's exchange calendar so a missed stock snapshot does not
+    # silently make us reuse older-than-prior-day signals.
+    dates = sorted({
+        str(row.get("date")) for row in index_rows
+        if first_snapshot <= str(row.get("date", "")) <= last_snapshot
+    })
+    if len(dates) < 2:
+        return []
+    accuracy_by_date = {
+        ("2026" + str(date) if len(str(date)) == 4 else str(date)): value
+        for date, value in _read_previous_prediction_accuracy().items()
+    }
+
+    nav = 1.0
+    peak = 1.0
+    nav_valid = True
+    exposure = 0.5 * 6.0
+    rows = []
+    for idx in range(1, len(dates)):
+        signal_date = dates[idx - 1]
+        trade_date = dates[idx]
+        count = _count_qualified_stocks(signal_date)
+        accuracy = accuracy_by_date.get(signal_date)
+        direction, signal = _daily_index_position(count, accuracy)
+
+        market = index_by_date.get(trade_date)
+        underlying_return = None
+        strategy_return = None
+        if market and market["open"]:
+            underlying_return = market["close"] / market["open"] - 1.0
+            strategy_return = direction * exposure * underlying_return
+            if nav_valid:
+                nav *= 1.0 + strategy_return
+                peak = max(peak, nav)
+        elif nav_valid:
+            # Once a day's mark is missing, later cumulative NAV/DD cannot be
+            # reconstructed reliably; keep the series visibly unknown.
+            nav_valid = False
+
+        rows.append({
+            "date_raw": trade_date,
+            "date": f"{trade_date[:4]}/{trade_date[4:6]}/{trade_date[6:]}" if len(trade_date) == 8 else _mmdd_label(trade_date),
+            "signal_date_raw": signal_date,
+            "signal_date": f"{signal_date[:4]}/{signal_date[4:6]}/{signal_date[6:]}" if len(signal_date) == 8 else _mmdd_label(signal_date),
+            "gt1_count": count,
+            "prediction_accuracy": accuracy,
+            "position": signal,
+            "index_open": market["open"] if market else None,
+            "index_close": market["close"] if market else None,
+            "index_return": _pct_value(underlying_return),
+            "strategy_return": _pct_value(strategy_return),
+            "nav": round(nav, 6) if nav_valid else None,
+            "drawdown": round((nav / peak - 1.0) * 100.0, 4) if nav_valid and peak else (0.0 if nav_valid else None),
+            "leverage": 6,
+        })
+    return rows
 
 
 def _normalize_history(raw_list: list) -> list:
