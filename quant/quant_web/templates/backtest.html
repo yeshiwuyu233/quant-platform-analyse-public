@@ -5,7 +5,7 @@
 {% block content %}
 
 {% if not sheets %}
-<div class="alert alert-warning">暂无该日期的回测数据。</div>
+<div class="alert alert-warning">这一天还没有回测数据。</div>
 {% else %}
 
 <!-- 日期导航 -->
@@ -20,7 +20,7 @@
   </li>
   <li class="nav-item" role="presentation">
     <button class="nav-link" id="tab-today" data-bs-toggle="pill" data-bs-target="#pane-today" type="button" role="tab">
-      📸 {{ current_date }} 当日快照
+      {{ current_date }} 当日数据
     </button>
   </li>
 </ul>
@@ -39,7 +39,7 @@
 {% set wr = sheets.get('win_rates') %}
 {% if wr %}
 <div class="card mb-4">
-  <div class="card-header"><strong>📊 三阶胜率全景对比</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+  <div class="card-header"><strong>不同指标下的胜率</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-dark table-striped mb-0">
@@ -89,7 +89,7 @@
 {% set hs = sheets.get('hot_split') %}
 {% if hs %}
 <div class="card mb-4">
-  <div class="card-header"><strong>🏆 并列热门拆分对比</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
+  <div class="card-header"><strong>热门行业对比（含并列）</strong><span class="badge bg-info ms-2">昨日选股 → 今日验证</span></div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-dark table-striped mb-0">
@@ -148,7 +148,7 @@
 {% set td = sheets.get('today_dist') %}
 {% if td %}
 <div class="card mb-4">
-  <div class="card-header"><strong>📊 当日最新策略分布</strong><span class="badge bg-warning ms-2">当日快照</span></div>
+  <div class="card-header"><strong>当日策略分布</strong><span class="badge bg-warning ms-2">当日数据</span></div>
   <div class="card-body p-0">
     <div class="table-responsive">
       <table class="table table-dark table-striped mb-0">
@@ -170,7 +170,7 @@
 <div class="row g-3 mb-4">
   <div class="col-md-7">
     <div class="card">
-      <div class="card-header"><strong>🔥 当日最新行业热度</strong><span class="badge bg-warning ms-2">当日快照</span></div>
+      <div class="card-header"><strong>当日行业热度</strong><span class="badge bg-warning ms-2">当日数据</span></div>
       <div class="card-body p-0">
         <div class="table-responsive" style="max-height:400px">
           <table class="table table-dark table-striped mb-0">
@@ -187,7 +187,7 @@
   </div>
   <div class="col-md-5">
     <div class="card">
-      <div class="card-header"><strong>🧩 行业热度饼图</strong><span class="badge bg-warning ms-2">当日快照</span></div>
+      <div class="card-header"><strong>🧩 行业热度饼图</strong><span class="badge bg-warning ms-2">当日数据</span></div>
       <div class="card-body"><div id="industryPieChart" style="height:400px;"></div></div>
     </div>
   </div>

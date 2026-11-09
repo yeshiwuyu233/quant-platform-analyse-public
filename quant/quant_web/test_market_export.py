@@ -180,7 +180,7 @@ class TestMarketExportAdminAction(unittest.TestCase):
             stdout=market_app.subprocess.DEVNULL,
             stderr=market_app.subprocess.DEVNULL,
         )
-        flash.assert_called_once_with("Workbook generation started")
+        flash.assert_called_once_with("正在生成 Excel，请稍后查看")
         self.assertEqual(response.status_code, 302)
 
     def test_health_template_shows_csv_and_export_stats(self):

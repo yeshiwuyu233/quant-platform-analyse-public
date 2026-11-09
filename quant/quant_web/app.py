@@ -28,6 +28,7 @@ _PIPELINE_STATUS_PATH = os.path.join(_PROJECT_ROOT, "pipeline_status.json")
 
 import data_service as ds
 import db_service as dbs
+import im_quotes
 import market_store
 import market_writer
 import refresh_market_cache as market_cache_refresher
@@ -620,6 +621,8 @@ def _run_pipeline_for_date(date_yyyymmdd, temp_csv=None):
     date_mmdd = date_yyyymmdd[4:]  # "20260511" -> "0511"
 
     status = _read_pipeline_status()
+    for key in ('error', 'backtest_error', 'weekly_error', 'im_pending'):
+        status.pop(key, None)
     status["running"] = True
     status["date"] = date_mmdd
     status["stage"] = "write_master"
@@ -668,17 +671,29 @@ def _run_pipeline_for_date(date_yyyymmdd, temp_csv=None):
         if wk_result.returncode != 0:
             status["weekly_error"] = (wk_result.stderr or wk_result.stdout or "")[-4000:]
 
+        success = backtest_ok and weekly_ok
+        if success:
+            try:
+                _, missing = im_quotes.refresh_quotes([date_yyyymmdd])
+                status['im_pending'] = bool(missing)
+            except (OSError, ValueError) as exc:
+                status['im_pending'] = True
+                app.logger.warning('IM 行情待补齐 %s: %s', date_yyyymmdd, exc)
+        else:
+            failed_jobs = [name for name, ok in (('每日回测', backtest_ok), ('礼拜攻势', weekly_ok)) if not ok]
+            status['error'] = '、'.join(failed_jobs) + '生成失败'
+
         elapsed = (datetime.now() - start).total_seconds()
 
         # Update status
         status["running"] = False
-        status["stage"] = "done"
+        status["stage"] = "done" if success else "failed"
         status["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         status["backtest_ok"] = backtest_ok
         status["weekly_ok"] = weekly_ok
         status.setdefault("history", []).insert(0, {
             "date": date_mmdd,
-            "status": "success" if (backtest_ok and weekly_ok) else "fail",
+            "status": "success" if success else "fail",
             "time": status["started_at"],
             "elapsed": int(elapsed),
         })
@@ -687,7 +702,7 @@ def _run_pipeline_for_date(date_yyyymmdd, temp_csv=None):
 
         # Send email
         body = _build_pipeline_email(date_mmdd, backtest_ok, weekly_ok, elapsed)
-        _send_pipeline_notification(backtest_ok and weekly_ok, body)
+        _send_pipeline_notification(success, body)
     except Exception as e:
         elapsed = (datetime.now() - start).total_seconds()
         if temp_csv and os.path.exists(temp_csv):
@@ -922,15 +937,16 @@ def _generate_csrf_token():
 def _validate_csrf_token(token):
     """Validate the submitted CSRF token against the session token."""
     expected = session.get("_csrf_token", "")
-    return hmac.compare_digest(str(token or ""), str(expected))
+    if not isinstance(token, str) or not isinstance(expected, str) or not token or not expected:
+        return False
+    return token.isascii() and expected.isascii() and hmac.compare_digest(token, expected)
 
 
 @app.before_request
 def _check_csrf_for_unsafe_methods():
     """CSRF check on POST/PUT/DELETE for routes that require it."""
     if request.method in ("POST", "PUT", "DELETE"):
-        # Only enforce CSRF on admin health action routes
-        if request.path.startswith("/admin/health/action"):
+        if request.path.startswith("/admin/health/action/") or request.path.rstrip('/') == '/admin/upload':
             token = request.form.get("csrf_token", "")
             if not _validate_csrf_token(token):
                 return jsonify({"error": "CSRF token missing or invalid"}), 403
@@ -1019,7 +1035,7 @@ def login():
             session["vpn_user_id"] = _vpn_resolve_user(os.path.join(os.path.dirname(__file__), "users.db"), user["username"])["id"]
             session["vpn_auth_stamp"] = _vpn_auth_stamp(os.path.join(os.path.dirname(__file__), "users.db"), session["vpn_user_id"], app.secret_key)
             session["user"] = {"username": username, "role": user["role"], "name": user["name"]}
-            next_page = request.args.get("next") or "/"
+            next_page = app.extensions["service_access_destination"](request.args.get("next") or "/")
             return redirect(next_page)
         return render_template("login.html", error="用户名或密码错误")
 
@@ -1031,7 +1047,8 @@ def login():
 
 @app.route("/logout")
 def logout():
-    session.pop("user", None)
+    for key in ("user", "vpn_user_id", "vpn_auth_stamp", "_csrf_token"):
+        session.pop(key, None)
     return redirect("/login")
 
 
@@ -1104,9 +1121,79 @@ def admin_required(f):
             return redirect(url_for("login", next=request.path))
         user = session.get("user")
         if not user or user.get("role") != "admin":
+            if request.is_json or request.path.startswith(("/api/", "/export/")):
+                return jsonify({"error": "forbidden"}), 403
             return render_template("login.html", error="无权限，仅管理员可访问"), 403
         return f(*args, **kwargs)
     return wrapper
+
+
+@app.route("/history/settings", methods=["GET", "POST"])
+@login_required
+def user_strategy_settings():
+    with ds.strategy_config.using_account(session['user']['username']):
+        return _render_strategy_settings(is_default=False)
+
+
+@app.route("/admin/strategy", methods=["GET", "POST"])
+@admin_required
+def admin_strategy():
+    with ds.strategy_config.using_account(None):
+        return _render_strategy_settings(is_default=True)
+
+
+def _render_strategy_settings(is_default):
+    store = ds.strategy_config
+    document = store.load_document()
+    config = document['config']
+    previewed = False
+    initialized = False
+    trial = None
+    error = None
+    status = 200
+    values = dict(request.form) if request.method == 'POST' else {}
+    if request.method == 'POST':
+        if not session.get('_csrf_token') or not _validate_csrf_token(request.form.get('csrf_token')):
+            return 'CSRF token missing or invalid', 403
+        try:
+            expected = int(request.form.get('version', '-1'))
+            action = request.form.get('action')
+            if action == 'restore':
+                store.save_settings(None, actor=session['user']['username'], expected_version=expected, restore=True)
+                flash('已恢复上一版设置。', 'success')
+                return redirect(url_for(request.endpoint))
+            if action == 'initialize':
+                config = store.initial_settings()
+                values = {}
+                initialized = True
+            else:
+                config = store.parse_form(request.form)
+            if action == 'save':
+                saved = store.save_settings(config, actor=session['user']['username'], expected_version=expected)
+                flash('默认设置已保存，没有单独设置策略的用户将使用这组参数。' if is_default else '设置已保存，回测和预测已按新设置更新。', 'success')
+                return redirect(url_for(request.endpoint))
+            if action not in ('preview', 'initialize'):
+                raise store.SettingsError('请选择预览、保存、恢复上一版或恢复初始设置')
+            previewed = True
+            sample_count = values.get('sample_count', '').strip()
+            sample_probability = values.get('sample_probability', '').strip()
+            if sample_count or sample_probability:
+                count = store._number(sample_count, '试算股票数', 0, 10000)
+                probability = store._number(sample_probability, '试算概率', 0, 100)
+                if not count.is_integer():
+                    raise store.SettingsError('试算股票数必须为整数')
+                signal = ds._market_timing_signal(int(count), probability, settings=config)
+                allocation = signal['allocation'] * 100
+                position = ('做多' if signal['direction'] > 0 else '做空') + f'{allocation:g}%' if signal['direction'] else '空仓'
+                trial = {**signal, 'position': position, 'count': int(count), 'probability': probability,
+                         'exposure': signal['direction'] * signal['allocation'] * config['daily_leverage']}
+        except store.SettingsConflict as exc:
+            error, status = str(exc), 409
+        except (store.SettingsError, ValueError) as exc:
+            error, status = str(exc), 400
+    return render_template('admin_strategy.html', document=document, config=config,
+                           rules=store.rule_rows(config), values=values, previewed=previewed,
+                           trial=trial, error=error, is_default=is_default, initialized=initialized), status
 
 
 @app.route("/admin/logins")
@@ -1206,7 +1293,7 @@ def admin_upload():
 
         status = _read_pipeline_status()
         if status.get("running"):
-            return jsonify({"error": "流水线正在运行中，请等待完成后再上传"}), 409
+            return jsonify({"error": "上一份数据还在处理，请等完成后再上传"}), 409
 
         master_path = os.path.join(_PROJECT_ROOT, "Whole Market.xlsx")
 
@@ -1221,7 +1308,7 @@ def admin_upload():
         )
         thread.start()
 
-        return jsonify({"ok": True, "message": f"数据已接收（{len(df)} 行），流水线开始运行"})
+        return jsonify({"ok": True, "message": f"已收到 {len(df)} 行数据，正在更新报告"})
 
     # GET: render upload page
     status = _read_pipeline_status()
@@ -1331,17 +1418,36 @@ def weekly(date=None):
 @login_required
 def history():
     records = ds.get_history_data()
-    return render_template("history.html",
-                           records=records,
+    return render_template('history.html', records=records,
                            index_trend=ds.get_history_index_trend(records),
-                           weekly_strategy=ds.get_weekly_strategy_history(),
-                           daily_index_strategy=ds.get_daily_index_strategy_history(),
                            all_dates=ds.get_available_dates())
+
+
+@app.route('/history/timing')
+@login_required
+def timing_backtest():
+    with ds.strategy_config.using_account(session['user']['username']):
+        document = ds.strategy_config.load_document()
+        with ds.strategy_config.using_settings(document['config']), ds.timing_input_session():
+            weekly = ds.get_weekly_strategy_history()
+            today = ds._shanghai_today()
+            daily = ds.get_daily_im_strategy_details(today)
+            prediction = next((row for row in reversed(daily) if row['is_forecast'] or (
+                row['date_raw'] == today and row['state_id'] is not None
+                and row['prediction_accuracy'] is not None)), None)
+            last_settled = max((row['date_raw'] for row in daily if not row['is_pending']), default='')
+            return render_template('timing_backtest.html',
+                                   weekly_strategy=weekly,
+                                   daily_index_strategy=[row for row in daily if row['date_raw'] <= last_settled],
+                                   weekly_details=ds.get_weekly_strategy_details(history=weekly),
+                                   daily_index_details=daily, daily_index_prediction=prediction,
+                                   strategy_document=document,
+                                   strategy_rules=ds.strategy_config.rule_rows(document['config']))
 
 
 @app.route("/screener")
 @app.route("/screener/<date>")
-@login_required
+@admin_required
 def screener(date=None):
     all_dates = ds.get_available_dates()
     if date and date not in all_dates:
@@ -1366,7 +1472,7 @@ def screener(date=None):
 # ── 筛选器 AJAX API ──
 
 @app.route("/api/screener/<date>")
-@login_required
+@admin_required
 def api_screener(date):
     """返回分页+筛选后的股票数据 JSON。"""
     acc_min = request.args.get("acc_min", type=float, default=0)
@@ -1392,7 +1498,8 @@ def api_history():
 @app.route("/api/history/weekly-strategy")
 @login_required
 def api_history_weekly_strategy():
-    return jsonify(ds.get_weekly_strategy_history())
+    with ds.strategy_config.using_account(session['user']['username']):
+        return jsonify(ds.get_weekly_strategy_history())
 
 
 @app.route("/api/latest")
@@ -1440,6 +1547,8 @@ def health():
 @login_required
 def export_excel(table, date=None):
     """导出表格数据为 Excel (.xlsx)。table: backtest, screener, history, weekly"""
+    if table == "screener" and session.get("user", {}).get("role") != "admin":
+        return jsonify({"error": "forbidden"}), 403
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -1597,11 +1706,11 @@ def admin_health_action(action):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        flash("Workbook generation started")
+        flash("正在生成 Excel，请稍后查看")
         return redirect(url_for("admin_health"))
     if action in actions:
         subprocess.Popen(actions[action])
-        flash("Operation triggered")
+        flash("已提交操作，请稍后查看结果")
     return redirect(url_for("admin_health"))
 
 
@@ -1610,6 +1719,17 @@ def admin_health_action(action):
 from vpn_portal import register_vpn_portal, resolve_user as _vpn_resolve_user
 from accounts import auth_stamp as _vpn_auth_stamp
 register_vpn_portal(app, os.path.join(os.path.dirname(__file__), 'users.db'), '/app/.vpn-internal/portal.sock')
+from service_access import register_service_access
+from vpn_portal import unix_rpc as _access_rpc
+
+def _vpn_capability(user):
+    status, _, body = _access_rpc('/app/.vpn-internal/portal.sock', 'GET', '/me', user, None, {})
+    if status != 200:
+        raise OSError('VPN membership service unavailable')
+    return bool(json.loads(body)['enabled'])
+
+register_service_access(app, os.path.join(os.path.dirname(__file__), 'users.db'), _vpn_capability)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

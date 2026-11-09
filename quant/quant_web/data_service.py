@@ -7,7 +7,10 @@ import json
 import math
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
+from functools import wraps
 from typing import Any, Optional
 
 import numpy as np
@@ -31,28 +34,66 @@ try:
 except Exception:
     import market_store
 
+try:
+    from . import strategy_settings as strategy_config
+except ImportError:
+    import strategy_settings as strategy_config
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # ── 轻量 TTL 缓存 ──
 
-def ttl_cache(seconds: int):
+def ttl_cache(seconds: int, strategy_dependent: bool = False):
     """Simple TTL cache decorator — no external dependencies."""
     def decorator(func):
         cache = {}
 
         def wrapper(*args, **kwargs):
-            key = (args, tuple(sorted(kwargs.items())))
+            config = strategy_config.get_settings() if strategy_dependent else None
+            key = (args, tuple(sorted(kwargs.items())), json.dumps(config, sort_keys=True) if strategy_dependent else None)
             now = datetime.now().timestamp()
             if key in cache:
                 val, ts = cache[key]
                 if now - ts < seconds:
                     return val
-            result = func(*args, **kwargs)
+            if strategy_dependent:
+                with strategy_config.using_settings(config):
+                    result = func(*args, **kwargs)
+                if len(cache) > 8:
+                    cache.clear()
+            else:
+                result = func(*args, **kwargs)
             cache[key] = (result, now)
             return result
         return wrapper
     return decorator
+
+_TIMING_INPUT_CACHE = ContextVar('timing_input_cache', default=None)
+
+
+@contextmanager
+def timing_input_session():
+    """Reuse raw inputs within one page request, never between requests."""
+    token = _TIMING_INPUT_CACHE.set({})
+    try:
+        yield
+    finally:
+        _TIMING_INPUT_CACHE.reset(token)
+
+
+def _timing_input_cached(function):
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        cache = _TIMING_INPUT_CACHE.get()
+        if cache is None:
+            return function(*args, **kwargs)
+        key = (function.__name__, args, tuple(sorted(kwargs.items())))
+        if key not in cache:
+            cache[key] = function(*args, **kwargs)
+        return cache[key]
+    return wrapper
+
 
 # 追踪表列位置 (Excel col 0 是 index)
 _COL = {
@@ -428,7 +469,7 @@ def get_weekly_data(date: Optional[str] = None) -> dict[str, Any]:
     # Try JSON first
     report, ok = _try_json(path)
     if ok and report:
-        return report
+        return _normalize_weekly_report_counts(report)
 
     # Fall back to xlsx
     try:
@@ -465,6 +506,39 @@ def extract_weekly_view(report, strategy='standard'):
     return report, chart_data
 
 
+def _normalize_weekly_report_counts(report):
+    """Correct legacy count labels in memory using the original stock details.
+
+    Older reports called the final valid-return count 'selected'. Retain the
+    original JSON and its reported return, while exposing selected/valid/missing
+    counts separately. No unavailable stock return is replaced or inferred.
+    """
+    if not isinstance(report, dict):
+        return report
+    available = min(5, max(0, int((report.get('meta') or {}).get('n_available', 0))))
+    corrections = []
+    for section_name in ('standard', 'top_industries', 'cold_industry'):
+        section = report.get(section_name) or {}
+        sheets = section.get('sheets') or {}
+        for row in section.get('summary') or []:
+            group = str(row.get('策略分组') or '')
+            matches = [table for name, table in sheets.items() if name == group or str(name).startswith(group + '(')]
+            if not group or not matches:
+                continue
+            details = (matches[0] or {}).get('rows', [])
+            selected = len(details)
+            valid = sum(_parse_pct(stock.get(f'T+{available}回报')) is not None for stock in details) if available else 0
+            old_selected = row.get('入选股票数')
+            if old_selected != selected:
+                corrections.append({'section': section_name, 'group': group, 'reported': old_selected, 'selected': selected, 'valid': valid})
+            row['入选股票数'] = selected
+            row['有效收益股票数'] = valid
+            row['缺失收益股票数'] = selected - valid
+    if corrections:
+        report.setdefault('meta', {})['count_corrections'] = corrections
+    return report
+
+
 def _weighted_weekly_return(summary_rows: list[dict[str, Any]]) -> tuple[Optional[float], int]:
     """Return weighted average weekly return as decimal plus total valid count."""
     weighted_sum = 0.0
@@ -474,7 +548,7 @@ def _weighted_weekly_return(summary_rows: list[dict[str, Any]]) -> tuple[Optiona
         if ret is None:
             continue
         try:
-            count = int(row.get('有效收益股票数') or row.get('入选股票数') or 0)
+            count = int(row['有效收益股票数'] if row.get('有效收益股票数') is not None else (row.get('入选股票数') or 0))
         except Exception:
             count = 0
         if count <= 0:
@@ -499,22 +573,43 @@ def _standard_gt1_summary(report: dict[str, Any]) -> tuple[Optional[float], int]
     return None, 0
 
 
-def _timing_positions(gt1_count: int, accuracy: Optional[float], min_count: int) -> tuple[float, bool]:
-    """Positions decided at the signal day's close for the next five trading days.
+def _market_timing_signal(count: Optional[int], accuracy: Optional[float], min_count: Optional[int] = None, settings=None) -> dict[str, Any]:
+    """First matching state wins; all thresholds, directions and sizes are configurable."""
+    config = settings if settings is not None else strategy_config.get_settings()
+    t = config['thresholds']
+    minimum = config['systemic_count'] if min_count is None else min_count
+    if count is None:
+        return {"state_id": None, "market_state": "数据不足", "direction": 0, "allocation": 0.0,
+                "state_reason": "缺少股票数"}
+    if accuracy is not None and (not math.isfinite(accuracy) or not 0 <= accuracy <= 100):
+        return {"state_id": None, "market_state": "数据不足", "direction": 0, "allocation": 0.0,
+                "state_reason": "前日准确率无效"}
+    if accuracy is not None and accuracy < t['rebound_below']:
+        state_id, reason = 1, f"前日预测准确率 <{t['rebound_below']:g}%"
+    elif accuracy is not None and accuracy > t['pullback_above']:
+        state_id, reason = 2, f"前日预测准确率 >{t['pullback_above']:g}%"
+    elif count < minimum:
+        state_id, reason = 3, f"合格股票数 <{minimum}只"
+    elif accuracy is None:
+        return {"state_id": None, "market_state": "数据不足", "direction": 0, "allocation": 0.0,
+                "state_reason": "缺少前日准确率"}
+    elif accuracy < t['down_below']:
+        state_id, reason = 4, f"{t['rebound_below']:g}% ≤前日预测准确率 <{t['down_below']:g}%"
+    elif accuracy <= t['range_ceiling']:
+        state_id, reason = 5, f"{t['down_below']:g}% ≤前日预测准确率 ≤{t['range_ceiling']:g}%"
+    else:
+        state_id, reason = 6, f"{t['range_ceiling']:g}% <前日预测准确率 ≤{t['pullback_above']:g}%"
+    state = config['states'][str(state_id)]
+    direction = state['direction'] if state['allocation_pct'] else 0
+    return {"state_id": state_id, "market_state": strategy_config.STATE_NAMES[state_id - 1],
+            "direction": direction, "allocation": state['allocation_pct'] / 100 if direction else 0.0,
+            "state_reason": reason}
 
-    ``accuracy`` is the accuracy of the *previous* trading day's prediction,
-    measured in the signal day's daily review. A missing accuracy never opens
-    a position when the stock count is at least ``min_count``.
-    """
-    if gt1_count < min_count:
-        return -0.5, False
-    if accuracy is None:
-        return 0.0, False
-    if accuracy <= 45.0:
-        return -0.5, False
-    if accuracy <= 78.0:
-        return 0.5, True
-    return -0.5, False
+
+def _timing_positions(gt1_count: int, accuracy: Optional[float], min_count: Optional[int] = None) -> tuple[float, bool]:
+    """Apply the same ordered six states to the independent weekly strategies."""
+    signal = _market_timing_signal(gt1_count, accuracy, min_count)
+    return signal["direction"] * signal["allocation"], signal["direction"] > 0
 
 
 def _pct_value(v: Optional[float]) -> Optional[float]:
@@ -698,7 +793,7 @@ def _build_strategy_sleeve_nav(
         standard_ret, gt1_count = _standard_gt1_summary(report)
         passes_filter = gt1_count >= min_gt1_count
         futures_weight, stock_long = _timing_positions(
-            gt1_count, accuracy_by_date.get(mmdd), min_gt1_count
+            gt1_count, accuracy_by_date.get(mmdd)
         )
 
         sleeves.append({
@@ -862,7 +957,7 @@ def _build_weekly_strategy_history(
         filtered_top_ret = top_ret if passes_filter and top_ret is not None else 0.0
         prediction_accuracy = accuracy_by_date.get(mmdd)
         futures_weight, stock_long = _timing_positions(
-            gt1_count, prediction_accuracy, min_gt1_count
+            gt1_count, prediction_accuracy
         )
 
         returns = {
@@ -920,8 +1015,10 @@ def _build_weekly_strategy_history(
             'exit_date': _mmdd_label(strategy_exit_date) if strategy_exit_date else None,
             'gt1_count': gt1_count,
             'prediction_accuracy': prediction_accuracy,
+            'count_corrections': [item for item in (report.get('meta') or {}).get('count_corrections', []) if item['section'] == 'standard' and '1.0' in item['group']],
+            **{key: value for key, value in _market_timing_signal(gt1_count, prediction_accuracy).items() if key != 'direction'},
             'stock_position': '做多100%' if stock_long else '空仓',
-            'futures_position': '做多50%' if futures_weight > 0 else ('做空50%' if futures_weight < 0 else '空仓'),
+            'futures_position': (f'做多{futures_weight * 100:g}%' if futures_weight > 0 else (f'做空{-futures_weight * 100:g}%' if futures_weight < 0 else '空仓')),
             'passes_filter': passes_filter,
             'top_count': top_count,
             'cold_count': cold_count,
@@ -980,6 +1077,7 @@ def get_history_index_trend(records: list[dict[str, Any]]) -> dict[str, list[Opt
     return trend
 
 
+@_timing_input_cached
 def _read_previous_prediction_accuracy() -> dict[str, float]:
     """Read accuracy known at each signal close from that day's daily review."""
     accuracy_by_date = {}
@@ -1000,7 +1098,7 @@ def _read_previous_prediction_accuracy() -> dict[str, float]:
     return accuracy_by_date
 
 
-@ttl_cache(120)
+@ttl_cache(120, strategy_dependent=True)
 def get_weekly_strategy_history(min_gt1_count: int = 60) -> list[dict[str, Any]]:
     files = sorted(glob_reports("*的选股策略礼拜攻势.json"))
     reports: list[tuple[str, dict[str, Any]]] = []
@@ -1010,7 +1108,7 @@ def get_weekly_strategy_history(min_gt1_count: int = 60) -> list[dict[str, Any]]
             continue
         try:
             with open(f, 'r', encoding='utf-8') as jf:
-                reports.append((mmdd, json.load(jf)))
+                reports.append((mmdd, _normalize_weekly_report_counts(json.load(jf))))
         except Exception:
             continue
     date_sequence = []
@@ -1028,11 +1126,18 @@ def get_weekly_strategy_history(min_gt1_count: int = 60) -> list[dict[str, Any]]
     )
 
 
+@_timing_input_cached
 def _count_qualified_stocks(trade_date: str) -> Optional[int]:
     """Count stocks with accuracy >60% and indicator >1 on one market snapshot."""
     if not market_db:
         return None
     stored_date = trade_date[4:] if len(trade_date) == 8 and trade_date.startswith("2026") else trade_date
+    fast_count = getattr(market_db, 'count_qualified_stocks', None)
+    if callable(fast_count):
+        try:
+            return fast_count(stored_date)
+        except (ValueError, TypeError):
+            pass
     frame = market_db.read_market_sheet(stored_date)
     if frame is None or frame.empty:
         return None
@@ -1045,19 +1150,247 @@ def _count_qualified_stocks(trade_date: str) -> Optional[int]:
 
 
 def _daily_index_position(count: Optional[int], accuracy: Optional[float]) -> tuple[int, str]:
-    """Return signed 50% allocation for the daily strategy's signal."""
-    if count is None:
-        return 0, "空仓（缺少股票数）"
-    if count < 60:
-        return -1, "做空50%"
-    if accuracy is None:
-        return 0, "空仓（缺少前日准确率）"
-    if accuracy <= 45.0 or accuracy > 78.0:
-        return -1, "做空50%"
-    return 1, "做多50%"
+    """Return the shared six-state direction and its 80%/50% allocation label."""
+    signal = _market_timing_signal(count, accuracy)
+    direction = signal["direction"]
+    allocation_pct = signal["allocation"] * 100
+    position = f"做多{allocation_pct:g}%" if direction > 0 else (f"做空{allocation_pct:g}%" if direction < 0 else ("空仓" if signal["state_id"] else f"空仓（{signal['state_reason']}）"))
+    return direction, position
 
 
-@ttl_cache(120)
+def _full_trade_date(value: str) -> str:
+    value = str(value)
+    return '2026' + value if len(value) == 4 else value
+
+
+def _full_date_label(value: str) -> str:
+    value = _full_trade_date(value)
+    return f'{value[:4]}/{value[4:6]}/{value[6:]}'
+
+
+def _shanghai_today() -> str:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo('Asia/Shanghai')).strftime('%Y%m%d')
+
+
+@ttl_cache(3600)
+def _get_exchange_sessions(today: str) -> list[str]:
+    try:
+        from . import trading_calendar
+    except ImportError:
+        import trading_calendar
+    try:
+        return trading_calendar.load_sessions(today)
+    except Exception:
+        # Cached index dates only confirm sessions actually present in the cache.
+        # A failed calendar fetch never guesses that a weekday is a session.
+        return sorted({str(row['date']) for row in _read_index_cache_rows('sh000852') if row.get('date')})
+
+
+def _current_signal_inputs(today: str) -> Optional[dict[str, Any]]:
+    dates = _get_exchange_sessions(today)
+    if today not in dates:
+        return None
+    pos = dates.index(today)
+    if pos == 0:
+        return None
+    signal_date = dates[pos - 1]
+    count = _count_qualified_stocks(signal_date)
+    accuracy = {_full_trade_date(d): v for d, v in _read_previous_prediction_accuracy().items()}.get(signal_date)
+    decision = _market_timing_signal(count, accuracy)
+    _, position = _daily_index_position(count, accuracy)
+    return {
+        'date_raw': today, 'date': _full_date_label(today),
+        'signal_date_raw': signal_date, 'signal_date': _full_date_label(signal_date),
+        'gt1_count': count, 'prediction_accuracy': accuracy,
+        **{key: value for key, value in decision.items() if key != 'direction'},
+        'position': position if decision['state_id'] else '-',
+    }
+
+
+def get_daily_index_prediction(today: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """Today's prior-session decision exists before today's returns are published."""
+    if not market_db:
+        return None
+    signal = _current_signal_inputs(today or _shanghai_today())
+    if signal is None or signal['gt1_count'] is None or signal['prediction_accuracy'] is None:
+        return None
+    return signal
+
+
+def _next_daily_index_prediction(today: str) -> Optional[dict[str, Any]]:
+    """Use the latest completed signal session for the next exchange session."""
+    if not market_db:
+        return None
+    next_date = next((date for date in _get_exchange_sessions(today) if date > today), None)
+    if next_date is None:
+        return None
+    signal = _current_signal_inputs(next_date)
+    if (signal is None or signal['signal_date_raw'] > today
+            or signal['gt1_count'] is None or signal['prediction_accuracy'] is None
+            or not signal['state_id']):
+        return None
+    return {**signal, 'is_forecast': True}
+
+
+def get_latest_daily_index_prediction(today: Optional[str] = None) -> Optional[dict[str, Any]]:
+    """Show the next session once its inputs arrive; otherwise show today's signal."""
+    today = today or _shanghai_today()
+    return _next_daily_index_prediction(today) or get_daily_index_prediction(today)
+
+
+@ttl_cache(120, strategy_dependent=True)
+def get_daily_im_strategy_details(today: Optional[str] = None) -> list[dict[str, Any]]:
+    """Mark the existing timing signal on a single IM lot, in yuan."""
+    try:
+        from . import im_quotes
+    except ImportError:
+        import im_quotes
+    from decimal import Decimal, InvalidOperation
+
+    today = today or _shanghai_today()
+    snapshots = [_full_trade_date(date) for date in market_db.get_market_dates()] if market_db else []
+    snapshots = [date for date in snapshots if date <= today]
+    if not snapshots:
+        return []
+    first_snapshot, last_snapshot = min(snapshots), max(snapshots)
+    sessions = _get_exchange_sessions(today)
+    probabilities = {_full_trade_date(date): value for date, value in _read_previous_prediction_accuracy().items()}
+    try:
+        quotes = im_quotes.load_quotes()
+    except (OSError, ValueError):
+        quotes = {}
+
+    cumulative = peak = Decimal(0)
+    complete = True
+    rows = []
+    for signal_date, date in zip(sessions, sessions[1:]):
+        if not first_snapshot <= signal_date <= last_snapshot:
+            continue
+        count = _count_qualified_stocks(signal_date)
+        probability = probabilities.get(signal_date)
+        decision = _market_timing_signal(count, probability)
+        forecast = date > today
+        if forecast and (count is None or probability is None or decision['state_id'] is None):
+            continue
+        direction = decision['direction']
+        quote = quotes.get(date) if not forecast else None
+        contract = opening = closing = points = pnl = None
+        if isinstance(quote, dict):
+            try:
+                opening, closing = Decimal(quote['open']), Decimal(quote['close'])
+                if any(not price.is_finite() or price <= 0 for price in (opening, closing)):
+                    raise ValueError('Invalid IM price')
+                contract = quote['contract']
+                points = closing - opening
+                pnl = direction * points * im_quotes.MULTIPLIER
+            except (KeyError, TypeError, ValueError, InvalidOperation):
+                opening = closing = None
+        if pnl is None:
+            if not forecast and direction:
+                complete = False
+        else:
+            cumulative += pnl
+            peak = max(peak, cumulative)
+        rows.append({
+            'date_raw': date, 'date': _full_date_label(date),
+            'signal_date_raw': signal_date, 'signal_date': _full_date_label(signal_date),
+            'gt1_count': count, 'prediction_accuracy': probability, **decision,
+            'position': {1: '做多 1 手', -1: '做空 1 手', 0: '空仓'}[direction],
+            'contract': contract,
+            'im_open': float(opening) if opening is not None else None,
+            'im_close': float(closing) if closing is not None else None,
+            'im_points': float(points) if points is not None else None,
+            'pnl': float(pnl) if pnl is not None else None,
+            'cumulative_pnl': float(cumulative) if complete and pnl is not None else None,
+            'drawdown_yuan': float(cumulative - peak) if complete and pnl is not None else None,
+            'is_forecast': forecast, 'is_pending': pnl is None,
+            'status': '待开盘' if forecast else ('待 IM 行情' if pnl is None else '已结算'),
+        })
+    return rows
+
+
+def get_daily_index_strategy_details(today: Optional[str] = None, history=None) -> list[dict[str, Any]]:
+    today = today or _shanghai_today()
+    rows = [dict(row, is_pending=False, status='已结算') for row in
+            (get_daily_index_strategy_history() if history is None else history)]
+    known = {row['date_raw'] for row in rows}
+    latest = max(known) if known else today
+    candidates = [date for date in _get_exchange_sessions(today) if latest <= date <= today and date not in known]
+    forecast = _next_daily_index_prediction(today)
+    if forecast and forecast['date_raw'] not in known:
+        candidates.append(forecast['date_raw'])
+    for date in candidates:
+        is_forecast = forecast is not None and date == forecast['date_raw']
+        signal = forecast if is_forecast else _current_signal_inputs(date)
+        if signal is None:
+            continue
+        if is_forecast:
+            status = '待开盘'
+        elif signal['state_id']:
+            status = '待今日行情' if date == today else '数据待补齐'
+        else:
+            status = '待信号数据'
+        pending = {**signal, 'is_pending': True, 'status': status,
+                   'leverage': strategy_config.get_settings()['daily_leverage']}
+        for key in ('index_open', 'index_close', 'index_return', 'strategy_return', 'nav', 'drawdown', 'effective_exposure'):
+            pending[key] = None
+        rows.append(pending)
+    return sorted(rows, key=lambda row: row['date_raw'])
+
+
+def get_weekly_strategy_details(today: Optional[str] = None, history=None) -> list[dict[str, Any]]:
+    """Keep unsettled signals in details without adding fabricated chart points."""
+    today = today or _shanghai_today()
+    dates = _get_exchange_sessions(today)
+    date_pos = {date: i for i, date in enumerate(dates)}
+    finished = get_weekly_strategy_history() if history is None else history
+    rows = []
+    seen = set()
+    for source in finished:
+        signal_date = _full_trade_date(source['date_raw'])
+        pos = date_pos.get(signal_date)
+        trade_date = dates[pos + 1] if pos is not None and pos + 1 < len(dates) else None
+        rows.append({**source, 'date': _full_date_label(signal_date), 'signal_date_raw': signal_date,
+                     'trade_date_raw': trade_date, 'trade_date': _full_date_label(trade_date) if trade_date else None,
+                     'exit_date': _full_date_label(source['exit_date_raw']) if source.get('exit_date_raw') else None,
+                     'is_pending': False, 'status': '已结算'})
+        seen.add(signal_date)
+    try:
+        market_dates = market_db.get_market_dates() if market_db else []
+    except Exception:
+        market_dates = []
+    candidates = {_full_trade_date(date): str(date) for date in market_dates}
+    if today in date_pos and date_pos[today] > 0:
+        previous = dates[date_pos[today] - 1]
+        candidates.setdefault(previous, previous)
+    accuracy_by_date = {_full_trade_date(d): value for d, value in _read_previous_prediction_accuracy().items()}
+    for signal_date, report_date in sorted(candidates.items()):
+        pos = date_pos.get(signal_date)
+        if signal_date in seen or pos is None or pos + 1 >= len(dates) or dates[pos + 1] > today:
+            continue
+        trade_date = dates[pos + 1]
+        count = _count_qualified_stocks(signal_date)
+        accuracy = accuracy_by_date.get(signal_date)
+        decision = _market_timing_signal(count, accuracy)
+        _, position = _daily_index_position(count, accuracy)
+        exit_date = dates[pos + 5] if pos + 5 < len(dates) else None
+        row = {'date_raw': signal_date, 'date': _full_date_label(signal_date), 'report_date_raw': report_date,
+               'signal_date_raw': signal_date, 'trade_date_raw': trade_date, 'trade_date': _full_date_label(trade_date),
+               'exit_date_raw': exit_date, 'exit_date': _full_date_label(exit_date) if exit_date else None,
+               'gt1_count': count, 'prediction_accuracy': accuracy,
+               **{key: value for key, value in decision.items() if key != 'direction'},
+               'futures_position': position if decision['state_id'] else '-',
+               'stock_position': ('做多100%' if decision['direction'] > 0 else '空仓') if decision['state_id'] else '-',
+               'is_pending': True, 'status': '待今日行情' if trade_date == today else ('数据待补齐' if exit_date and exit_date <= today else '待五日结算')}
+        for series in ('top', 'filtered_top', 'futures_timing', 'stock_timing', 'cold', 'standard', 'csi1000'):
+            for metric in ('return', 'nav', 'drawdown'):
+                row[f'{series}_{metric}'] = None
+        rows.append(row)
+    return sorted(rows, key=lambda row: row['signal_date_raw'])
+
+
+@ttl_cache(120, strategy_dependent=True)
 def get_daily_index_strategy_history() -> list[dict[str, Any]]:
     """Daily CSI1000 spot-proxy strategy: prior-day signal, same-day open-close."""
     if not market_db:
@@ -1100,13 +1433,14 @@ def get_daily_index_strategy_history() -> list[dict[str, Any]]:
     nav = 1.0
     peak = 1.0
     nav_valid = True
-    exposure = 0.5 * 6.0
+    leverage = strategy_config.get_settings()["daily_leverage"]
     rows = []
     for idx in range(1, len(dates)):
         signal_date = dates[idx - 1]
         trade_date = dates[idx]
         count = _count_qualified_stocks(signal_date)
         accuracy = accuracy_by_date.get(signal_date)
+        decision = _market_timing_signal(count, accuracy)
         direction, signal = _daily_index_position(count, accuracy)
 
         market = index_by_date.get(trade_date)
@@ -1114,7 +1448,7 @@ def get_daily_index_strategy_history() -> list[dict[str, Any]]:
         strategy_return = None
         if market and market["open"]:
             underlying_return = market["close"] / market["open"] - 1.0
-            strategy_return = direction * exposure * underlying_return
+            strategy_return = direction * decision["allocation"] * leverage * underlying_return
             if nav_valid:
                 nav *= 1.0 + strategy_return
                 peak = max(peak, nav)
@@ -1130,6 +1464,7 @@ def get_daily_index_strategy_history() -> list[dict[str, Any]]:
             "signal_date": f"{signal_date[:4]}/{signal_date[4:6]}/{signal_date[6:]}" if len(signal_date) == 8 else _mmdd_label(signal_date),
             "gt1_count": count,
             "prediction_accuracy": accuracy,
+            **{key: value for key, value in _market_timing_signal(count, accuracy).items() if key != "direction"},
             "position": signal,
             "index_open": market["open"] if market else None,
             "index_close": market["close"] if market else None,
@@ -1137,7 +1472,8 @@ def get_daily_index_strategy_history() -> list[dict[str, Any]]:
             "strategy_return": _pct_value(strategy_return),
             "nav": round(nav, 6) if nav_valid else None,
             "drawdown": round((nav / peak - 1.0) * 100.0, 4) if nav_valid and peak else (0.0 if nav_valid else None),
-            "leverage": 6,
+            "leverage": leverage,
+            "effective_exposure": round(direction * decision["allocation"] * leverage, 4),
         })
     return rows
 

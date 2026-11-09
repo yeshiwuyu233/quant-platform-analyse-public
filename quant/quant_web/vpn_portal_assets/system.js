@@ -1,5 +1,11 @@
 'use strict';
 (() => {
+  const dateFormatterCache = new Map();
+  function dateFormatter(locale, options) {
+    const key = locale + JSON.stringify(options);
+    if (!dateFormatterCache.has(key)) dateFormatterCache.set(key, new Intl.DateTimeFormat(locale, options));
+    return dateFormatterCache.get(key);
+  }
   const bootstrapNode = document.getElementById('vpn-bootstrap');
   let bootstrap;
   try { bootstrap = JSON.parse(bootstrapNode ? bootstrapNode.textContent : '{}'); } catch (_) { return; }
@@ -21,7 +27,7 @@
     if (epoch === null || epoch === undefined || !Number.isFinite(Number(epoch))) return '未知';
     const options = dateOnly ? { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' } :
       { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
-    return new Intl.DateTimeFormat('zh-CN', options).format(new Date(Number(epoch) * 1000));
+    return dateFormatter('zh-CN', options).format(new Date(Number(epoch) * 1000));
   };
   const todayText = () => new Date(Date.now() + UTC8).toISOString().slice(0, 10);
   const dateEpoch = text => {

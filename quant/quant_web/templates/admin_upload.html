@@ -6,12 +6,13 @@
     <h5 class="mb-3">上传每日 Excel 数据</h5>
 
     <div class="small text-muted mb-3">
-        <a href="/admin/health">🩺 查看系统健康状态 →</a>
+        <a href="/admin/health">查看系统状态</a>
     </div>
 
     <form id="uploadForm" enctype="multipart/form-data" class="card bg-tertiary p-3 mb-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="mb-3">
-            <label class="form-label">日期 (YYYYMMDD)</label>
+            <label class="form-label">数据日期</label>
             <input type="text" class="form-control" name="date" id="dateInput"
                    value="{{ today }}" placeholder="20260511" maxlength="8" required>
         </div>
@@ -21,12 +22,12 @@
                    accept=".xlsx" required>
         </div>
         <div id="uploadMsg" class="mb-2"></div>
-        <button type="submit" class="btn btn-primary" id="uploadBtn">上传并运行流水线</button>
+        <button type="submit" class="btn btn-primary" id="uploadBtn">上传并更新报告</button>
     </form>
 
     <!-- Pipeline status -->
     <div class="card bg-tertiary p-3 mb-4">
-        <h6>流水线状态 <span id="statusBadge" class="badge bg-secondary">空闲</span></h6>
+        <h6>数据更新进度 <span id="statusBadge" class="badge bg-secondary">待上传</span></h6>
         <div id="statusDetail" class="small text-muted mt-1"></div>
     </div>
 
@@ -72,10 +73,10 @@ let pollTimer = null;
 function updateStatusUI(status) {
     if (status.running) {
         const stageMap = {
-            write_master: '写入总表',
-            refresh_market_cache: '刷新缓存',
+            write_master: '保存数据',
+            refresh_market_cache: '更新行情数据',
             backtest: '回测中',
-            weekly: '礼拜攻势中',
+            weekly: '计算礼拜攻势',
             starting: '启动中'
         };
         statusBadge.textContent = stageMap[status.stage] || '运行中';
@@ -83,12 +84,14 @@ function updateStatusUI(status) {
         statusDetail.textContent = (status.date ? '日期: ' + status.date + ' | ' : '')
             + '开始: ' + (status.started_at || '');
     } else {
-        statusBadge.textContent = status.stage === 'failed' ? '失败' : '空闲';
-        statusBadge.className = status.stage === 'failed' ? 'badge bg-danger' : 'badge bg-secondary';
+        const completed = status.stage === 'done';
+        statusBadge.textContent = status.stage === 'failed' ? '更新失败' : (completed ? '更新完成' : '等待上传');
+        statusBadge.className = status.stage === 'failed' ? 'badge bg-danger' : (completed ? 'badge bg-success' : 'badge bg-secondary');
         if (status.date) {
             statusDetail.textContent = '上次: ' + status.date
                 + ' | ' + (status.finished_at || '')
-                + (status.error ? ' | ' + status.error : '');
+                + (status.error ? ' | ' + status.error : '')
+                + (status.im_pending ? ' | IM 行情待更新' : '');
         }
     }
 }
@@ -101,7 +104,7 @@ async function parseFetchResponse(response) {
         try {
             data = text ? JSON.parse(text) : {};
         } catch (err) {
-            throw new Error('返回 JSON 解析失败: ' + err.message);
+            throw new Error('无法读取服务器回复：' + err.message);
         }
     }
     if (!response.ok) {
@@ -109,7 +112,7 @@ async function parseFetchResponse(response) {
         throw new Error('HTTP ' + response.status + ': ' + msg.slice(0, 200));
     }
     if (!data) {
-        throw new Error('服务器返回非 JSON: ' + text.slice(0, 200));
+        throw new Error('服务器回复异常：' + text.slice(0, 200));
     }
     return data;
 }
@@ -136,7 +139,7 @@ function pollStatus() {
             }
         })
         .catch(err => {
-            statusBadge.textContent = '状态异常';
+            statusBadge.textContent = '暂时无法获取进度';
             statusBadge.className = 'badge bg-danger';
             statusDetail.textContent = err.message;
         });
@@ -152,13 +155,11 @@ uploadForm.addEventListener('submit', function(e) {
         return;
     }
     if (!/^\d{8}$/.test(dateInput.value)) {
-        uploadMsg.innerHTML = '<div class="text-danger">日期格式: YYYYMMDD</div>';
+        uploadMsg.innerHTML = '<div class="text-danger">日期请填 8 位数字，例如 20261028</div>';
         return;
     }
 
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    formData.append('date', dateInput.value);
+    const formData = new FormData(uploadForm);
 
     uploadBtn.disabled = true;
     uploadMsg.innerHTML = '<div class="text-info">上传中...</div>';

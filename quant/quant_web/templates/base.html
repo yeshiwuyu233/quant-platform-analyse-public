@@ -28,14 +28,17 @@
                     <a href="/backtest" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/backtest') else '' }}">每日回测</a>
                     <a href="/weekly" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/weekly') else '' }}">礼拜攻势</a>
                     <a href="/history" class="list-group-item list-group-item-action {{ 'active' if request.path == '/history' else '' }}">历史趋势</a>
-                    <a href="/screener" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/screener') else '' }}">选股筛选</a>
-                    <a href="/vpn/" class="list-group-item list-group-item-action">VPN 设备管理</a>
+                    <a href="/history/timing" class="list-group-item list-group-item-action {{ 'active' if request.path == '/history/timing' else '' }}">择时回测</a>
+                    <a href="/history/settings" class="list-group-item list-group-item-action {{ 'active' if request.path == '/history/settings' else '' }}">策略设置</a>
+                    {% if current_user and current_user.role == 'admin' %}<a href="/screener" class="list-group-item list-group-item-action {{ 'active' if request.path.startswith('/screener') else '' }}">选股筛选</a>{% endif %}
+                    {% if service_permissions is defined and service_permissions.get('vpn', False) %}<a href="/vpn/" class="list-group-item list-group-item-action">VPN 设备管理</a>{% endif %}
                 </nav>
                 <div class="mt-auto">
                     <div class="px-3 pb-2 pt-2">
                         <span class="small text-secondary" style="opacity:0.5;font-size:10px;">量化回测 v2.0</span>
                     </div>
                     {% if current_user and current_user.role == 'admin' %}
+                    <a href="/admin/strategy" class="d-block px-3 py-1 small text-secondary text-decoration-none">⚙️ 系统默认设置</a>
                     <a href="/admin/users" class="d-block px-3 py-1 small text-secondary text-decoration-none">👥 用户管理</a>
                     <a href="/admin/logins" class="d-block px-3 py-1 small text-secondary text-decoration-none">📋 登录记录</a>
                     <a href="/admin/upload" class="d-block px-3 py-1 small text-secondary text-decoration-none">📤 上传数据</a>
@@ -69,6 +72,7 @@
     </script>
     <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='echarts.min.js') }}?v=7"></script>
+    <script src="{{ url_for('static', filename='chart_time_controls.js', v=static_version('chart_time_controls.js')) }}"></script>
     <script src="{{ url_for('static', filename='charts.js', v=static_version('charts.js')) }}"></script>
 
     {% block scripts %}{% endblock %}

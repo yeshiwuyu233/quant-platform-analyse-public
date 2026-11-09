@@ -42,9 +42,10 @@ const isolated = [
 assert.deepStrictEqual(JSON.parse(JSON.stringify(context.buildShortPositionRanges(isolated))),
   [{ startIndex: 1, endIndex: 1 }]);
 context.applyShortPositionBackground(context.echarts.init(), isolated);
-const isolatedRect = options.pop().graphic[0].children[0];
-assert.deepStrictEqual(JSON.parse(JSON.stringify(isolatedRect.shape)),
-  { x: 100, y: 0, width: 100, height: 100 });
+const isolatedArea = options.pop().series[0].markLine;
+assert.deepStrictEqual(JSON.parse(JSON.stringify(isolatedArea.data)),
+  [{xAxis:'05/14'}]);
+assert.strictEqual(isolatedArea.lineStyle.color, 'rgba(220,53,69,0.12)');
 
 context.document.getElementById = () => ({});
 const weeklyRecord = {
@@ -76,8 +77,8 @@ const drawdownOption = options[2];
 assert.deepStrictEqual(navOption.legend.data, drawdownOption.legend.data);
 assert.deepStrictEqual(navOption.color, drawdownOption.color);
 assert.strictEqual(navOption.series.length, 7);
-assert.strictEqual(options[1].graphic[0].children.length, 1);
-assert.strictEqual(options[3].graphic[0].children.length, 1);
+assert.strictEqual(options[1].series[0].markLine.data.length, 1);
+assert.strictEqual(options[3].series[0].markLine.data.length, 1);
 assert.notStrictEqual(navOption.series[2].name, navOption.series[3].name);
 
 for (let i = 0; i < navOption.series.length; i += 1) {

@@ -160,6 +160,28 @@ def count_market_rows(trade_date: str) -> Optional[int]:
     return int(row["rows_count"]) if row else None
 
 
+def count_qualified_stocks(trade_date: str) -> Optional[int]:
+    """Count the timing universe without loading thousands of stock rows."""
+    value = str(trade_date)
+    stored_date = value[4:] if len(value) == 8 and value.startswith("2026") else value
+    row = fetchone(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN typeof(accuracy) IN ('text','blob')
+                          OR typeof(indicator) IN ('text','blob') THEN 1 ELSE 0 END) AS needs_coercion,
+               SUM(CASE WHEN accuracy > 0.60 AND indicator > 1.0 THEN 1 ELSE 0 END) AS qualified
+        FROM market_snapshot WHERE trade_date = ?
+        """,
+        (stored_date,),
+    )
+    if row is None or not row["total"]:
+        return None
+    if row["needs_coercion"]:
+        # Preserve pandas' legacy parsing of unusual string values exactly.
+        raise ValueError("Market numeric columns require coercion")
+    return int(row["qualified"])
+
+
 def get_cache_status() -> dict:
     status = {
         "db_path": DB_PATH,

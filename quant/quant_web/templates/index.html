@@ -4,7 +4,7 @@
 
 {% block content %}
 {% if not tracking %}
-<div class="alert alert-warning">暂无数据，请先运行流水线生成复盘报告。</div>
+<div class="alert alert-warning">还没有复盘报告，数据更新后会显示在这里。</div>
 {% else %}
 {% set t = tracking %}
 
@@ -44,7 +44,7 @@
     <div class="col-md-4">
         <div class="card metric-card">
             <div class="card-body">
-                <h6 class="card-subtitle text-muted">全市场冷门 Alpha<span class="tip" data-tip="从指标大于1.0的股票池中，筛选出所属行业仅含一只股票的那些股票，计算其平均回报率。">?</span></h6>
+                <h6 class="card-subtitle text-muted">全市场冷门 Alpha<span class="tip" data-tip="先筛出指标大于1.0的股票。如果某个行业只剩一只，就把它归入冷门股，计算这些股票的平均收益。">?</span></h6>
                 <h2 class="card-title mb-0">{{ t.cold_alpha_raw or '-' }}</h2>
             </div>
         </div>

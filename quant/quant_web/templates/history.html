@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block page_title %}📈 历史趋势{% endblock %}
-
 {% block content %}
 {% if not records %}
-<div class="alert alert-warning">暂无历史数据。</div>
+<div class="alert alert-warning">还没有历史数据。</div>
 {% else %}
+<div data-chart-range-group="history" data-time-axis="数据日">
 <!-- 图表区域 -->
 <div class="row g-3 mb-4">
     <div class="col-12">
@@ -22,8 +22,8 @@
             <div class="card-header"><strong>下一日预测达标数与指数走势</strong></div>
             <div class="card-body">
                 <div id="nextDayChart" style="height:440px;"></div>
-                <p class="small text-body-secondary mt-2 mb-0">蓝柱为达标股票数，使用左侧纵轴；黄线和粉线分别为中证500、中证1000的收盘点位，使用右侧纵轴。数据按同一交易日对齐。</p>
-                <p class="small text-body-secondary d-md-none mt-1 mb-0">拖动图表下方的时间轴，可查看更早日期。</p>
+                <p class="small text-body-secondary mt-2 mb-0">蓝柱看左轴，表示达标股票数；黄线和粉线看右轴，分别是中证500和中证1000当日的收盘点位。</p>
+                <p class="small text-body-secondary d-md-none mt-1 mb-0">拖动下方时间轴可以查看其他日期。</p>
             </div>
         </div>
     </div>
@@ -39,166 +39,9 @@
     </div>
 </div>
 
-{% if weekly_strategy or daily_index_strategy %}
-{% set initial_strategy_mode = 'weekly' if weekly_strategy else 'daily' %}
-<div class="card mb-3">
-    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <strong>策略周期</strong>
-        <div class="btn-group btn-group-sm" role="tablist" aria-label="切换策略周期">
-            {% if weekly_strategy %}
-            <button type="button" class="btn {% if initial_strategy_mode == 'weekly' %}btn-light{% else %}btn-outline-light{% endif %}" id="weeklyStrategyTab" role="tab" aria-controls="weeklyStrategyPanel" aria-selected="{{ 'true' if initial_strategy_mode == 'weekly' else 'false' }}" data-strategy-mode="weekly">礼拜攻势</button>
-            {% endif %}
-            {% if daily_index_strategy %}
-            <button type="button" class="btn {% if initial_strategy_mode == 'daily' %}btn-light{% else %}btn-outline-light{% endif %}" id="dailyStrategyTab" role="tab" aria-controls="dailyStrategyPanel" aria-selected="{{ 'true' if initial_strategy_mode == 'daily' else 'false' }}" data-strategy-mode="daily">日频策略</button>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-{% if weekly_strategy %}
-<div id="weeklyStrategyPanel" role="tabpanel" aria-labelledby="weeklyStrategyTab" class="history-strategy-panel{% if initial_strategy_mode != 'weekly' %} d-none{% endif %}">
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header"><strong>礼拜攻势历史收益</strong></div>
-            <div class="card-body">
-                <p class="small text-body-secondary mb-1">图例说明（“合格股票”指准确率 &gt;60% 且今日指标 &gt;1 的股票）：</p>
-                <ol class="small text-body-secondary mb-2 ps-3">
-                    <li><strong class="text-light">前三行业（每日）</strong>：每天选合格股票最多的前三个行业，买入其中的合格股票；不使用 60 只和前日预测准确率条件。</li>
-                    <li><strong class="text-light">前三行业（≥60）</strong>：使用同一批前三行业股票；当天合格股票总数 ≥60 只才买入，否则空仓。</li>
-                    <li><strong class="text-light">股指择时（±50%）</strong>：总数 &lt;60 只，或前一交易日预测准确率 ≤45% 时做空 50%；总数 ≥60 只且准确率 &gt;45%、≤78% 时做多 50%；准确率 &gt;78% 时做空 50%。</li>
-                    <li><strong class="text-light">前三行业择时（100%）</strong>：总数 ≥60 只且前一交易日预测准确率 &gt;45%、≤78% 时，买入前三行业股票；其余情况空仓。它与上一项是分别计算的两条曲线。</li>
-                    <li><strong class="text-light">冷门行业</strong>：买入合格股票中，每个行业只有 1 只合格股票的那些股票。</li>
-                    <li><strong class="text-light">标准&gt;1</strong>：买入全部合格股票，不筛行业，也不使用 60 只和前日预测准确率条件。</li>
-                    <li><strong class="text-light">中证1000</strong>：用指数收盘价计算的参照线，采用与策略相同的五日滚动仓位。</li>
-                </ol>
-                <p class="small text-body-secondary mb-2">每条策略曲线单独计算：每个交易日以当时净值的 20% 开一笔新仓，持有五个交易日；上面的 50% 和 100% 是单笔仓位内的比例。前三行业遇第三名并列时纳入全部并列行业。横轴是信号日，净值点是该信号五日后账户的净值；浅红底纹表示该信号日股指策略做空，并非净值点当天的账户净空仓位。股指曲线用中证1000指数代替实际期货价格，未计基差、换月和交易成本。</p>
-                <div id="weeklyStrategyNavChart" style="height:400px;"></div>
-            </div>
-        </div>
-    </div>
-</div>
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header"><strong>礼拜攻势回撤</strong></div>
-            <div class="card-body">
-                <div id="weeklyStrategyDrawdownChart" style="height:360px;"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="card mb-4">
-    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <strong>礼拜攻势历史明细</strong>
-        <div class="btn-group btn-group-sm" role="group" aria-label="历史明细显示指标">
-            <button type="button" class="btn btn-outline-light" data-history-metric="return" aria-pressed="false">五日收益</button>
-            <button type="button" class="btn btn-light" data-history-metric="nav" aria-pressed="true">净值</button>
-            <button type="button" class="btn btn-outline-light" data-history-metric="drawdown" aria-pressed="false">回撤</button>
-        </div>
-    </div>
-    <div class="card-body pb-0">
-        <p class="small text-body-secondary mb-2">按信号日从新到旧排列，仅显示已完成五个交易日的信号。五日收益属于该笔信号；净值和回撤是结仓日的账户曲线数值。点击上方按钮可对照七条图线。</p>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive" style="max-height:500px">
-            <table id="weeklyHistoryTable" class="table table-dark table-striped table-sm text-nowrap align-middle mb-0">
-                <thead>
-                    <tr>
-                        <th>信号日</th>
-                        <th>五日结仓日</th>
-                        <th>合格股数</th>
-                        <th>前日预测准确率</th>
-                        <th>股指信号</th>
-                        <th>股票信号</th>
-                        <th>前三行业（每日）</th>
-                        <th>前三行业（≥60）</th>
-                        <th>股指择时（±50%）</th>
-                        <th>前三行业择时（100%）</th>
-                        <th>冷门行业</th>
-                        <th>标准&gt;1</th>
-                        <th>中证1000</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in weekly_strategy|reverse %}
-                    <tr data-history-date="{{ r.date_raw }}">
-                        <td><a href="/weekly/{{ r.date_raw }}" class="date-link">{{ r.date }}</a></td>
-                        <td>{{ r.exit_date or '-' }}</td>
-                        <td>{{ r.gt1_count }}</td>
-                        <td>{% if r.prediction_accuracy is not none %}{{ "%.2f"|format(r.prediction_accuracy) }}%{% else %}-{% endif %}</td>
-                        <td><span class="badge {% if r.futures_position.startswith('做空') %}text-bg-danger{% elif r.futures_position.startswith('做多') %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ r.futures_position }}</span></td>
-                        <td><span class="badge {% if r.stock_position.startswith('做多') %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ r.stock_position }}</span></td>
-                        <td data-series-key="top">{{ "%.6f"|format(r.top_nav) }}</td>
-                        <td data-series-key="filtered_top">{{ "%.6f"|format(r.filtered_top_nav) }}</td>
-                        <td data-series-key="futures_timing">{{ "%.6f"|format(r.futures_timing_nav) }}</td>
-                        <td data-series-key="stock_timing">{{ "%.6f"|format(r.stock_timing_nav) }}</td>
-                        <td data-series-key="cold">{{ "%.6f"|format(r.cold_nav) }}</td>
-                        <td data-series-key="standard">{{ "%.6f"|format(r.standard_nav) }}</td>
-                        <td data-series-key="csi1000">{{ "%.6f"|format(r.csi1000_nav) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-</div>
-{% endif %}
-
-{% if daily_index_strategy %}
-<div id="dailyStrategyPanel" role="tabpanel" aria-labelledby="dailyStrategyTab" class="history-strategy-panel{% if initial_strategy_mode != 'daily' %} d-none{% endif %}">
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header"><strong>日频股指策略（与礼拜攻势分开计算）</strong></div>
-            <div class="card-body">
-                <p class="small text-body-secondary mb-2">每日开盘前使用前一交易日数据：合格股票数（准确率 &gt;60% 且指标 &gt;1）少于60只，或前日预测准确率 ≤45%，做空50%；数量不少于60且准确率 &gt;45%、≤78%，做多50%；准确率 &gt;78%，做空50%。合格股数不少于60但缺少前日准确率时空仓。当天以中证1000现货开盘价进场、收盘价结算做代理；50%仓位乘6倍杠杆，即净值按±3倍指数日内涨跌计算。该曲线独立从1.0起算，不与周频策略合并；未计交易成本、滑点和期现基差。</p>
-                <div id="dailyIndexStrategyNavChart" style="height:380px;"></div>
-                <div id="dailyIndexStrategyDrawdownChart" style="height:280px;"></div>
-            </div>
-        </div>
-    </div>
-</div>
-<div class="card mb-4">
-    <div class="card-header"><strong>日频股指策略明细</strong></div>
-    <div class="card-body pb-2">
-        <p class="small text-body-secondary mb-0">信号日为实际交易日前一交易日。收益率为毛收益；“-”表示缺少对应数据。</p>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive" style="max-height:500px">
-            <table class="table table-dark table-striped table-sm text-nowrap align-middle mb-0">
-                <thead><tr>
-                    <th>交易日</th><th>信号日</th><th>合格股票数</th><th>前日预测准确率</th><th>方向</th>
-                    <th>中证1000开盘</th><th>收盘</th><th>指数日内涨跌</th><th>策略毛收益</th><th>净值</th><th>回撤</th>
-                </tr></thead>
-                <tbody>
-                    {% for r in daily_index_strategy|reverse %}
-                    <tr>
-                        <td>{{ r.date }}</td><td>{{ r.signal_date }}</td><td>{{ r.gt1_count if r.gt1_count is not none else '-' }}</td>
-                        <td>{% if r.prediction_accuracy is not none %}{{ "%.2f"|format(r.prediction_accuracy) }}%{% else %}-{% endif %}</td>
-                        <td><span class="badge {% if r.position.startswith('做空') %}text-bg-danger{% elif r.position.startswith('做多') %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ r.position }}</span></td>
-                        <td>{{ "%.2f"|format(r.index_open) if r.index_open is not none else '-' }}</td>
-                        <td>{{ "%.2f"|format(r.index_close) if r.index_close is not none else '-' }}</td>
-                        <td>{% if r.index_return is not none %}{{ "%.4f"|format(r.index_return) }}%{% else %}-{% endif %}</td>
-                        <td>{% if r.strategy_return is not none %}{{ "%.4f"|format(r.strategy_return) }}%{% else %}-{% endif %}</td>
-                        <td>{% if r.nav is not none %}{{ "%.6f"|format(r.nav) }}{% else %}-{% endif %}</td>
-                        <td>{% if r.drawdown is not none %}{{ "%.2f"|format(r.drawdown) }}%{% else %}-{% endif %}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-</div>
-{% endif %}
-
 <!-- 历史数据表格（日期可点击） -->
 <div class="card">
-    <div class="card-header"><strong>历史数据明细（点击日期查看回测详情）</strong></div>
+    <div class="card-header"><strong>历史明细</strong></div>
     <div class="card-body p-0">
         <div class="table-responsive" style="max-height:500px">
             <table class="table table-dark table-striped mb-0">
@@ -215,7 +58,7 @@
                 </thead>
                 <tbody>
                     {% for r in records %}
-                    <tr class="clickable-row" data-href="/backtest/{{ r.date_raw }}">
+                    <tr class="clickable-row" data-href="/backtest/{{ r.date_raw }}" data-range-date="{{ r.date_raw }}">
                         <td><a href="/backtest/{{ r.date_raw }}" class="date-link">{{ r.date }}</a></td>
                         <td>{{ r.acc_08 }}%</td>
                         <td>{{ r.acc_12 }}%</td>
@@ -230,6 +73,7 @@
         </div>
     </div>
 </div>
+</div>
 {% endif %}
 {% endblock %}
 
@@ -237,45 +81,8 @@
 <script>
 const records = {{ records|tojson|safe }};
 const indexTrend = {{ index_trend|tojson|safe }};
-const weeklyStrategy = {{ weekly_strategy|tojson|safe }};
-const dailyIndexStrategy = {{ daily_index_strategy|tojson|safe }};
 renderWinRateTrend('winRateChart', records);
 renderAlphaTrend('alphaChart', records);
 renderNextDayTrend('nextDayChart', records, indexTrend);
-renderWeeklyStrategyNav('weeklyStrategyNavChart', weeklyStrategy);
-renderWeeklyStrategyDrawdown('weeklyStrategyDrawdownChart', weeklyStrategy);
-initWeeklyHistoryTable(weeklyStrategy);
-renderDailyIndexStrategyNav('dailyIndexStrategyNavChart', dailyIndexStrategy);
-renderDailyIndexStrategyDrawdown('dailyIndexStrategyDrawdownChart', dailyIndexStrategy);
-
-function initHistoryStrategySwitcher() {
-    const tabs = document.querySelectorAll('[data-strategy-mode]');
-    const panels = {
-        weekly: document.getElementById('weeklyStrategyPanel'),
-        daily: document.getElementById('dailyStrategyPanel'),
-    };
-
-    tabs.forEach((tab) => {
-        tab.addEventListener('click', () => {
-            const mode = tab.dataset.strategyMode;
-            Object.entries(panels).forEach(([panelMode, panel]) => {
-                if (panel) panel.classList.toggle('d-none', panelMode !== mode);
-            });
-            tabs.forEach((item) => {
-                const active = item === tab;
-                item.classList.toggle('btn-light', active);
-                item.classList.toggle('btn-outline-light', !active);
-                item.setAttribute('aria-selected', active ? 'true' : 'false');
-            });
-            requestAnimationFrame(() => {
-                document.querySelectorAll(`#${mode}StrategyPanel [id$="Chart"]`).forEach((chart) => {
-                    const instance = echarts.getInstanceByDom(chart);
-                    if (instance) instance.resize();
-                });
-            });
-        });
-    });
-}
-initHistoryStrategySwitcher();
 </script>
 {% endblock %}

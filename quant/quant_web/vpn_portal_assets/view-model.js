@@ -1,5 +1,12 @@
 'use strict';
 (function (root) {
+  const dateFormatterCache = new Map();
+  function dateFormatter(locale, options) {
+    const key = locale + JSON.stringify(options);
+    if (!dateFormatterCache.has(key)) dateFormatterCache.set(key, new Intl.DateTimeFormat(locale, options));
+    return dateFormatterCache.get(key);
+  }
+  const speedNumberFormatter = new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2});
   const routes = {
     overview: ['账户总览', '查看可用流量，管理设备与订阅。'],
     devices: ['我的设备', '每台设备使用独立配置，可单独更新和停用。'],
@@ -28,13 +35,13 @@
     if (!known(value)) return '未知';
     const n = Math.max(0,Number(value))/1e9;
     if (n > 0 && n < .01) return '不足 0.01';
-    return new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2}).format(n);
+    return speedNumberFormatter.format(n);
   }
   function date(value, time=false) {
     if (!known(value)) return '暂无记录';
     const options={timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'};
     if(time) Object.assign(options,{hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
-    return new Intl.DateTimeFormat('zh-CN',options).format(new Date(Number(value)*1000));
+    return dateFormatter('zh-CN',options).format(new Date(Number(value)*1000));
   }
   const speed = value => value === null || value === undefined || value === '' ? '不限速' : known(value) ? `${Number(value)} Mbps` : '未知';
   function quotaSummary(q) {

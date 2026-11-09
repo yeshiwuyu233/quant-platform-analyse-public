@@ -97,6 +97,8 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
         self.assertEqual(rows[0]["futures_position"], "做多50%")
         self.assertEqual(rows[0]["stock_position"], "做多100%")
         self.assertTrue(rows[0]["passes_filter"])
+        self.assertEqual((rows[0]["state_id"], rows[0]["market_state"]), (6, "上行模式"))
+        self.assertEqual((rows[1]["state_id"], rows[1]["market_state"]), (3, "系统性暴跌模式"))
         self.assertAlmostEqual(rows[0]["top_nav"], 1.051946, places=6)
         self.assertAlmostEqual(rows[0]["filtered_top_nav"], 1.122102, places=6)
         self.assertAlmostEqual(rows[0]["top_drawdown"], 0.0)
@@ -106,9 +108,9 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
 
         self.assertAlmostEqual(rows[1]["top_return"], -10.0)
         self.assertAlmostEqual(rows[1]["filtered_top_return"], 0.0)
-        self.assertAlmostEqual(rows[1]["futures_timing_return"], -15.8845, places=4)
+        self.assertAlmostEqual(rows[1]["futures_timing_return"], -25.4152, places=4)
         self.assertAlmostEqual(rows[1]["stock_timing_return"], 0.0)
-        self.assertEqual(rows[1]["futures_position"], "做空50%")
+        self.assertEqual(rows[1]["futures_position"], "做空80%")
         self.assertEqual(rows[1]["stock_position"], "空仓")
         self.assertFalse(rows[1]["passes_filter"])
         self.assertAlmostEqual(rows[1]["filtered_top_nav"], 1.122102, places=6)
@@ -164,14 +166,35 @@ class TestWeeklyStrategyHistory(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["stock_timing_return"], 10.0)
         self.assertEqual(rows[0]["futures_position"], "做多50%")
 
+    def test_all_states_apply_eighty_or_fifty_percent_inside_twenty_percent_sleeve(self):
+        from quant_web.data_service import _build_weekly_strategy_history
+
+        dates = [f"040{i}" for i in range(1, 7)]
+        index = [{"date": "2026" + d, "close": 100 if i == 0 else 110} for i, d in enumerate(dates)]
+        for count, probability, state, expected_return, expected_nav in (
+            (10, 12, 1, 8.0, 1.016), (10, 79, 2, -8.0, 0.984),
+            (10, 60, 3, -8.0, 0.984), (80, 30, 4, -5.0, 0.990),
+            (80, 50, 5, 5.0, 1.010), (80, 60, 6, 5.0, 1.010),
+        ):
+            report = {"meta": {"n_available": 5}, "standard": {"summary": [
+                {"策略分组": "指标大于1.0", "入选股票数": count, "平均持仓回报": "10.0%"}]}}
+            with self.subTest(state=state):
+                row = _build_weekly_strategy_history(
+                    [(dates[0], report)], index_rows=index, date_sequence=dates,
+                    accuracy_by_date={dates[0]: probability},
+                )[0]
+                self.assertEqual(row["state_id"], state)
+                self.assertEqual(row["futures_timing_return"], expected_return)
+                self.assertEqual(row["futures_timing_nav"], expected_nav)
+
     def test_timing_thresholds_are_independent_and_missing_accuracy_stays_cash(self):
         from quant_web.data_service import _timing_positions
 
-        self.assertEqual(_timing_positions(59, 60.0, 60), (-0.5, False))
-        self.assertEqual(_timing_positions(60, 45.0, 60), (-0.5, False))
+        self.assertEqual(_timing_positions(59, 60.0, 60), (-0.8, False))
+        self.assertEqual(_timing_positions(60, 45.0, 60), (0.5, True))
         self.assertEqual(_timing_positions(60, 45.01, 60), (0.5, True))
         self.assertEqual(_timing_positions(60, 78.0, 60), (0.5, True))
-        self.assertEqual(_timing_positions(60, 78.01, 60), (-0.5, False))
+        self.assertEqual(_timing_positions(60, 78.01, 60), (-0.8, False))
         self.assertEqual(_timing_positions(60, None, 60), (0.0, False))
 
 

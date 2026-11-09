@@ -1,5 +1,11 @@
 'use strict';
 (() => {
+  const dateFormatterCache = new Map();
+  function dateFormatter(locale, options) {
+    const key = locale + JSON.stringify(options);
+    if (!dateFormatterCache.has(key)) dateFormatterCache.set(key, new Intl.DateTimeFormat(locale, options));
+    return dateFormatterCache.get(key);
+  }
   const root = document.getElementById('quota-root');
   if (!root) return;
   root.hidden = true;
@@ -93,13 +99,13 @@
     if (value === null || value === undefined || value === '') return '未设置';
     let n = typeof value === 'string' && !/^\d+(\.\d+)?$/.test(value) ? Date.parse(value) / 1000 : Number(value);
     if (!Number.isFinite(n)) return '未设置';
-    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(n * 1000));
+    return dateFormatter('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(n * 1000));
   };
   const localInput = value => {
     if (value === null || value === undefined || value === '') return '';
     let n = typeof value === 'string' && !/^\d+(\.\d+)?$/.test(value) ? Date.parse(value) / 1000 : Number(value);
     if (!Number.isFinite(n)) return '';
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(n * 1000));
+    const parts = dateFormatter('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(n * 1000));
     const p = Object.fromEntries(parts.map(x => [x.type, x.value])); return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
   };
   const escapeError = e => e && e.message ? e.message : '请求失败，请稍后重试。';
@@ -124,13 +130,25 @@
   function inputMode(n, mode) { n.inputMode = mode; }
   function formatSpeed(value) { return value === null || value === undefined || value === '' || Number(value) <= 0 ? '不限速' : `${Number(value)} Mbps`; }
   function bucket(label, value, detail) { const card = el('article', 'quota-card'); card.append(el('span', 'quota-card-label', label), el('strong', 'quota-card-value', value), el('small', '', detail || '')); return card; }
+  let chartUsage = null, chartWidth = null, chartFrame = 0;
+  let loadedQuotaTarget = null, loadedQuotaAt = 0, pendingQuota = null, pendingQuotaTarget = null;
+  function scheduleChart() {
+    if (chartFrame) return;
+    chartFrame = requestAnimationFrame(() => { chartFrame = 0; drawChart(state.usage || {}); });
+  }
   function drawChart(usage) {
-    const svg = $('chart'); svg.replaceChildren(); const series = Array.isArray(usage?.series) ? usage.series : [];
+    const svg = $('chart');
+    if (!svg || !svg.getClientRects().length) return;
+    const series = Array.isArray(usage?.series) ? usage.series : [];
     const width = Math.max(280, Math.round(svg.parentElement.getBoundingClientRect().width) || Math.min(680, window.innerWidth - 64)), height = 172, pad = { l: 10, r: 10, t: 10, b: 28 }, plotH = height - pad.t - pad.b, plotW = width - pad.l - pad.r;
+    if (chartUsage === usage && chartWidth === width) return;
+    chartUsage = usage; chartWidth = width;
+    const fragment = document.createDocumentFragment();
+    svg.replaceChildren();
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('preserveAspectRatio', 'none');
     const points = series.filter(p => p.total_bytes !== null && p.total_bytes !== undefined && Number.isFinite(Number(p.total_bytes)));
     const max = Math.max(1, ...points.map(p => Number(p.total_bytes)));
-    const add = (tag, attrs, text) => { const n = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([k,v]) => n.setAttribute(k, String(v))); if (text !== undefined) n.textContent = text; svg.append(n); };
+    const add = (tag, attrs, text) => { const n = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([k,v]) => n.setAttribute(k, String(v))); if (text !== undefined) n.textContent = text; fragment.append(n); };
     for (let y = 0; y < 3; y++) add('line', { x1: pad.l, y1: pad.t + plotH * y / 2, x2: width - pad.r, y2: pad.t + plotH * y / 2, stroke: 'var(--app-line-soft)', 'stroke-dasharray': y ? '3 4' : '0' });
     const stride = series.length ? plotW / series.length : plotW, barW = Math.min(38, Math.max(8, stride * .46));
     series.forEach((p, i) => {
@@ -140,9 +158,11 @@
         if (dh) add('rect', { x: x - barW/2, y: pad.t + plotH - dh, width: barW, height: dh, rx: 3, fill: 'var(--app-accent)' });
         if (uh) add('rect', { x: x - barW/2, y: pad.t + plotH - dh - uh, width: barW, height: uh, rx: 3, fill: 'var(--app-upload)' });
       }
-      const stamp = Number(p.start), label = Number.isFinite(stamp) ? new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' }).format(new Date(stamp * 1000)) : `${i+1}日`;
+      if (i % Math.max(1, Math.ceil(series.length / Math.max(2, Math.floor(plotW / 66)))) !== 0 && i !== series.length - 1) return;
+      const stamp = Number(p.start), label = Number.isFinite(stamp) ? dateFormatter('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' }).format(new Date(stamp * 1000)) : `${i+1}日`;
       if (i % Math.max(1, Math.ceil(series.length / Math.max(2, Math.floor(plotW / 66)))) === 0 || i === series.length - 1) add('text', { x, y: height - 7, 'text-anchor': 'middle', fill: 'var(--app-muted)', 'font-size': 10 }, label);
     });
+    svg.append(fragment);
     svg.setAttribute('aria-label', `用量趋势，${series.length} 个时段，${points.length} 个已记录`);
     const empty = $('chart-empty'); empty.hidden = Boolean(series.length && points.length); empty.textContent = series.length ? '此范围尚无可确认的用量记录；未知时段不会按零显示。' : '尚无用量历史记录。';
     $('usage-down').textContent = '下载 '+gb(usage?.download_bytes); $('usage-up').textContent = '上传 '+gb(usage?.upload_bytes);
@@ -198,21 +218,37 @@
       $('quota-expiry').textContent = `套餐到期 ${date(q.expires_at)} · 下次重置 ${date(q.next_reset_at || q.period_end)}`;
       $('speed-down').textContent = formatSpeed(q.download_mbps); $('speed-up').textContent = formatSpeed(q.upload_mbps);
     }
-    $('last-refresh').textContent = `最近刷新 ${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date())}`;
-    drawChart(state.usage || {}); renderAudit(state.audit);
+    $('last-refresh').textContent = `最近刷新 ${dateFormatter('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date())}`;
+    scheduleChart(); renderAudit(state.audit);
   }
-  async function fetchQuota(targetId = state.targetId) {
+  function quotaEvent(id, payload = {}) {
+    emit('vpn:quota', { quota: state.quota, usage: state.usage, audit: state.audit, targetId: String(id), target: safeUser(payload.target_user), meter: payload.meter });
+  }
+  function fetchQuota(targetId = state.targetId, { force = false } = {}) {
+    if (!force && pendingQuota && String(pendingQuotaTarget) === String(targetId)) return pendingQuota;
     const version = ++state.sequence, id = targetId;
-    status('正在读取额度与用量…'); $('quota-content').hidden = true;
-    try {
-      const path = state.admin ? `admin/quota/${encodeURIComponent(id)}` : 'quota';
-      const payload = await api(path);
-      if (version !== state.sequence || String(id) !== String(state.targetId)) return;
-      if (!payload.quota) throw new Error('额度接口返回的数据格式无法识别。');
-      state.quota = payload.quota; state.usage = payload.usage || {}; state.audit = Array.isArray(payload.audit) ? payload.audit : [];
-      render(); status('额度和用量已更新。', 'success');
-      emit('vpn:quota', { quota: state.quota, usage: state.usage, audit: state.audit, targetId: String(id), target: safeUser(payload.target_user), meter: payload.meter });
-    } catch (e) { if (version === state.sequence) { state.quota = null; $('quota-content').hidden = true; status(escapeError(e), 'error'); emit('vpn:quota-error', { targetId: String(id), message: escapeError(e) }); } }
+    status('正在读取额度与用量…');
+    // A same-user background refresh must not collapse and re-expand the page.
+    if (!state.quota || String(loadedQuotaTarget) !== String(id)) $('quota-content').hidden = true;
+    const job = (async () => {
+      try {
+        const path = state.admin ? `admin/quota/${encodeURIComponent(id)}` : 'quota';
+        const payload = await api(path);
+        if (version !== state.sequence || String(id) !== String(state.targetId)) return;
+        if (!payload.quota) throw new Error('额度接口返回的数据格式无法识别。');
+        state.quota = payload.quota; state.usage = payload.usage || {}; state.audit = Array.isArray(payload.audit) ? payload.audit : [];
+        loadedQuotaTarget = String(id); loadedQuotaAt = Date.now();
+        render(); status('额度和用量已更新。', 'success'); quotaEvent(id, payload);
+      } catch (e) {
+        if (version === state.sequence) {
+          loadedQuotaAt = 0; state.quota = null; $('quota-content').hidden = true;
+          status(escapeError(e), 'error'); emit('vpn:quota-error', { targetId: String(id), message: escapeError(e) });
+        }
+      }
+    })();
+    pendingQuota = job; pendingQuotaTarget = id;
+    job.finally(() => { if (pendingQuota === job) { pendingQuota = null; pendingQuotaTarget = null; } });
+    return job;
   }
   async function loadUsers() {
     const payload = await api('admin/users'); state.users = Array.isArray(payload.users) ? payload.users : [];
@@ -248,7 +284,7 @@
   }
   function monthAddBJ(epoch, months) {
     const dateValue = new Date(Number(epoch) * 1000);
-    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(dateValue).map(p => [p.type, p.value]));
+    const parts = Object.fromEntries(dateFormatter('en-GB', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(dateValue).map(p => [p.type, p.value]));
     const y = Number(parts.year), m = Number(parts.month) - 1, day = Number(parts.day), h = Number(parts.hour), min = Number(parts.minute), sec = Number(parts.second);
     const targetMonth = m + months, lastDay = new Date(Date.UTC(y, targetMonth + 1, 0)).getUTCDate();
     return Math.floor((Date.UTC(y, targetMonth, Math.min(day, lastDay), h, min, sec) - 8 * 3600 * 1000) / 1000);
@@ -423,12 +459,12 @@
   }
   async function mutate(method, path, body, errorKey, buttonKey, targetId) {
     state.busy = true; updatePickerState(); const button = $(buttonKey); button.disabled = true; $(errorKey).textContent = '';
-    try { await api(path, { method, body: JSON.stringify(body) }); dialog(errorKey.startsWith('policy') ? 'policy-dialog' : 'grant-dialog').close(); status('变更已保存，正在刷新额度…'); await fetchQuota(targetId); }
+    try { await api(path, { method, body: JSON.stringify(body) }); dialog(errorKey.startsWith('policy') ? 'policy-dialog' : 'grant-dialog').close(); status('变更已保存，正在刷新额度…'); await fetchQuota(targetId, { force: true }); }
     catch (e) { $(errorKey).textContent = escapeError(e); }
     finally { state.busy = false; button.disabled = false; state.dialogTargetId = null; updatePickerState(); }
   }
   function initEvents() {
-    $('refresh').addEventListener('click', () => fetchQuota());
+    $('refresh').addEventListener('click', () => fetchQuota(state.targetId, { force: true }));
     $('target-picker').addEventListener('change', () => { if (state.busy || state.dialogTargetId) return; state.targetId = $('target-picker').value; state.quota = null; fetchQuota(); });
     $('edit-policy').addEventListener('click', openPolicy); $('add-grant').addEventListener('click', openGrant);
     $('policy-form').addEventListener('submit', submitPolicy); $('grant-form').addEventListener('submit', submitGrant);
@@ -489,11 +525,19 @@
   }
   window.VPNQuotaUI = {
     refreshUsers: async () => { if (state.admin && !state.stopped) { await loadUsers(); render(); } },
-    selectUser: async id => { if (isBusy() || state.stopped || !state.admin || !state.users.some(u => String(u.id) === String(id))) return false; state.targetId = String(id); $('target-picker').value = state.targetId; state.quota = null; render(); await fetchQuota(); return true; },
-    refresh: fetchQuota,
+    selectUser: async id => {
+      if (isBusy() || state.stopped || !state.admin || !state.users.some(u => String(u.id) === String(id))) return false;
+      const sameTarget = String(state.targetId) === String(id);
+      if (sameTarget && pendingQuota && String(pendingQuotaTarget) === String(id)) { await pendingQuota; return true; }
+      if (sameTarget && state.quota && loadedQuotaTarget === String(id) && Date.now() - loadedQuotaAt < 15000) { quotaEvent(id); return true; }
+      state.targetId = String(id); $('target-picker').value = state.targetId;
+      if (!sameTarget) state.quota = null;
+      render(); await fetchQuota(); return true;
+    },
+    refresh: () => fetchQuota(state.targetId, { force: true }),
     isBusy
   };
-  document.addEventListener('vpn:layout', () => { if ($('chart')) drawChart(state.usage || {}); });
-  window.addEventListener('resize', () => { if ($('chart')) drawChart(state.usage || {}); });
+  document.addEventListener('vpn:layout', scheduleChart);
+  window.addEventListener('resize', scheduleChart);
   initialize();
 })();

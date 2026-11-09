@@ -5,9 +5,12 @@
 {% block content %}
 
 {% if not sheets %}
-<div class="alert alert-warning">暂无该日期的礼拜攻势数据。</div>
+<div class="alert alert-warning">这一天还没有礼拜攻势数据。</div>
 {% else %}
 
+{% if report.meta and report.meta.count_corrections %}
+<div class="alert alert-info small">这份报告的股票数已按明细修正。表中分别列出入选、有收益数据和缺少收益数据的股票数，原始报告未改动。</div>
+{% endif %}
 <!-- 日期导航 -->
 {{ date_nav(prev_date, next_date, all_dates, current_date, "/weekly/") }}
 
@@ -16,20 +19,20 @@
 <div class="strategy-toggle-wrapper mb-3 text-center">
   <div class="strategy-toggle btn-group" role="group">
     <button type="button" class="strategy-btn active" data-strategy="standard" id="btnStandard">
-      🌐 全市场标准策略
+      全市场
     </button>
     {% if report.top_industries and report.top_industries.meta and report.top_industries.meta.industries %}
     <button type="button" class="strategy-btn" data-strategy="top_industries" id="btnTopInd">
-      🏭 前三行业分行业
+      前三行业
     </button>
     {% endif %}
     <button type="button" class="strategy-btn" data-strategy="cold_industry" id="btnCold">
-      ❄️ 冷门行业专属策略
+      冷门行业
     </button>
   </div>
   {% if report.meta and report.meta.cold_industries %}
   <div class="strategy-hint mt-1">
-    <small class="text-muted">当日单股行业（冷门池）：{{ report.meta.cold_industries | join('、') }}</small>
+    <small class="text-muted">当天只有一只合格股票的行业：{{ report.meta.cold_industries | join('、') }}</small>
   </div>
   {% endif %}
 </div>
@@ -37,7 +40,7 @@
 
 <!-- 冷门行业总轨迹图（仅冷门策略可见） -->
 <div class="card mb-4" id="coldCombinedCard" style="display:none">
-  <div class="card-header"><strong>📊 冷门行业总轨迹</strong><small class="text-muted ms-2">所有冷门股票的等权合并日收益曲线</small></div>
+  <div class="card-header"><strong>冷门行业累计收益</strong><small class="text-muted ms-2">全部冷门股票等权计算</small></div>
   <div class="card-body">
     <div id="coldCombinedChart" style="height:300px"></div>
   </div>
@@ -45,7 +48,7 @@
 
 <!-- 5日生命周期轨迹图 -->
 <div class="card mb-4" id="trajectoryCard">
-  <div class="card-header"><strong>📈 5日生命周期轨迹图</strong><small class="text-muted ms-2">{{ current_date }} 选股 → 后一周逐日累计收益</small></div>
+  <div class="card-header"><strong>选股后五日收益</strong><small class="text-muted ms-2">{{ current_date }} 选股，查看随后五个交易日的累计收益</small></div>
   <div class="card-body">
     <div id="trajectoryChart" style="height:400px"></div>
   </div>
@@ -53,7 +56,7 @@
 
 <!-- 策略分组透析图 -->
 <div class="card mb-4" id="summaryCard">
-  <div class="card-header"><strong>📊 策略分组透析图</strong></div>
+  <div class="card-header"><strong>各组收益对比</strong></div>
   <div class="card-body">
     <div id="weeklyChart" style="height:380px"></div>
   </div>
@@ -121,7 +124,7 @@
 
         var names = Object.keys(sheets);
         if (names.length === 0) {
-            container.innerHTML = '<div class="alert alert-warning">暂无该策略的明细数据。</div>';
+            container.innerHTML = '<div class="alert alert-warning">这组策略还没有明细。</div>';
             return;
         }
 
@@ -132,7 +135,7 @@
             if (!t || !t.rows || t.rows.length === 0) {
                 html += '<div class="card mb-4">' +
                     '<div class="card-header"><strong>📊 ' + name + '</strong></div>' +
-                    '<div class="card-body p-0"><div class="p-3 text-muted">该策略当日空仓。</div></div>' +
+                    '<div class="card-body p-0"><div class="p-3 text-muted">当天没有持仓。</div></div>' +
                     '</div>';
                 continue;
             }
@@ -184,15 +187,15 @@
         if (hintEl && fullReport && fullReport.meta) {
             var cold = fullReport.meta.cold_industries || [];
             if (currentStrategy === 'cold_industry') {
-                hintEl.textContent = '当日单股行业（冷门池）：' + cold.join('、');
+                hintEl.textContent = '当天只有一只合格股票的行业：' + cold.join('、');
                 hintEl.style.color = '#ffc107';
             } else if (currentStrategy === 'top_industries') {
                 var topMeta = fullReport.top_industries && fullReport.top_industries.meta;
                 var topInds = topMeta ? (topMeta.industries || []) : [];
-                hintEl.textContent = '分行业计算（指标>1.0）：' + topInds.join('、');
+                hintEl.textContent = '入选行业（指标>1.0）：' + topInds.join('、');
                 hintEl.style.color = '#0dcaf0';
             } else {
-                hintEl.textContent = '全市场范围内所有股票参与礼拜攻势';
+                hintEl.textContent = '从全市场按各组条件选股';
                 hintEl.style.color = '';
             }
         }

@@ -1,8 +1,8 @@
 """Administrator account edits against the original website user database."""
 import contextlib,datetime,hashlib,hmac,json,pathlib,re,secrets,sqlite3
 
-PUBLIC='id,username,email,name,role,created_at'
-FIELDS={'username','email','name','role','password'}
+PUBLIC='id,username,email,name,role,created_at,quant_enabled'
+FIELDS={'username','email','name','role','password','quant_enabled'}
 
 class AccountError(ValueError):
     def __init__(self,message,status=400):
@@ -33,6 +33,8 @@ class UserAccounts:
     def __init__(self,path):
         self.path=str(path)
         with self.db(write=True) as con:
+            if 'quant_enabled' not in {r['name'] for r in con.execute('PRAGMA table_info(users)')}:
+                con.execute('ALTER TABLE users ADD COLUMN quant_enabled INTEGER NOT NULL DEFAULT 0 CHECK(quant_enabled IN (0,1))')
             if 'vpn_auth_revision' not in {r['name'] for r in con.execute('PRAGMA table_info(users)')}:
                 con.execute("ALTER TABLE users ADD COLUMN vpn_auth_revision TEXT NOT NULL DEFAULT '0'")
             con.execute('''CREATE TRIGGER IF NOT EXISTS vpn_auth_revision_changed
@@ -56,6 +58,7 @@ class UserAccounts:
     @staticmethod
     def _public(row):
         out=dict(row)
+        out['quant_enabled']=out['role']=='admin' or bool(out.get('quant_enabled'))
         email=out['email'] or ''
         if re.fullmatch(r'vpn-[0-9a-f]{32}@no-email\.yeshiwuyu\.invalid',email):email=''
         out['email']=email
@@ -74,6 +77,9 @@ class UserAccounts:
     def _values(data,create=False):
         if not isinstance(data,dict) or not data or set(data)-FIELDS:raise AccountError('提交的用户字段不正确。')
         data=dict(data)
+        if 'quant_enabled' in data:
+            if type(data['quant_enabled']) is not bool:raise AccountError('量化回测权限必须为是或否。')
+            data['quant_enabled']=int(data['quant_enabled'])
         if create:
             if not data.get('username') or not data.get('password'):raise AccountError('请填写用户名和初始密码。')
             data.setdefault('name',data['username']);data.setdefault('role','user');data.setdefault('email','')

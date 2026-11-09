@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block page_title %}{{ "默认策略设置" if is_default else "策略设置" }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div><h4 class="mb-1">{{ "默认策略设置" if is_default else "策略设置" }}</h4><p class="small text-body-secondary mb-1">从状态 1 开始，按顺序判断，符合条件就采用该状态。</p><p class="small text-body-secondary mb-0">{% if is_default %}没有单独设置策略的用户，会使用这里的默认设置。{% else %}这里只调整你自己的策略。保存后，日频、礼拜攻势择时和顶部预测会使用这组设置，历史回测也会随之更新。{% endif %}</p></div>
+    <a href="/history/timing" class="btn btn-outline-light btn-sm">查看择时回测</a>
+</div>
+{% for category, message in get_flashed_messages(with_categories=true) %}
+<div class="alert alert-{{ category }}">{{ message }}</div>
+{% endfor %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}；本次未保存。</div>{% endif %}
+{% if previewed and not error %}<div class="alert alert-info" id="strategyPreviewNotice">{{ '已填回初始参数，保存后生效。' if initialized else '以下是未保存的预览，保存后才会生效。' }}</div>{% endif %}
+<div class="small text-body-secondary mb-3">{% if not is_default and document.source == "default" %}正在使用系统默认设置。{% elif document.version == 0 %}默认设置还未修改。{% else %}已保存 · {{ document.updated_at }}{% endif %}</div>
+<form method="post" id="strategySettingsForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="version" value="{{ document.version }}">
+    <input type="hidden" name="daily_leverage" value="{{ config.daily_leverage }}">
+    <div class="card mb-3">
+        <div class="card-header"><strong>判断条件</strong></div>
+        <div class="card-body row g-3">
+            {% for key, label in [('rebound_below','超跌反弹：概率低于'), ('down_below','下行：概率低于'), ('range_ceiling','振荡：概率上限'), ('pullback_above','超涨回调：概率高于')] %}
+            <div class="col-6 col-lg-3"><label class="form-label small" for="{{ key }}">{{ label }}</label><div class="input-group"><input class="form-control" id="{{ key }}" name="{{ key }}" type="number" min="0" max="100" step="0.01" required value="{{ values.get(key, config.thresholds[key]) }}"><span class="input-group-text">%</span></div></div>
+            {% endfor %}
+            <div class="col-6"><label class="form-label small" for="systemic_count">系统性暴跌：合格股票数少于</label><div class="input-group"><input class="form-control" id="systemic_count" name="systemic_count" type="number" min="1" max="10000" step="1" required value="{{ values.get('systemic_count', config.systemic_count) }}"><span class="input-group-text">只</span></div></div>
+            <p class="small text-body-secondary mb-0">四个概率值需要从小到大填写。概率等于“下行”或“振荡上限”时，算振荡；等于“超涨回调”时，算上行。</p>
+        </div>
+    </div>
+    <div class="card mb-3">
+        <div class="card-header"><strong>交易方向和仓位</strong></div>
+        <div class="table-responsive"><table class="table table-dark align-middle mb-0">
+            <thead><tr><th>顺序 / 状态</th><th>方向</th><th>股指仓位</th></tr></thead>
+            <tbody>{% for rule in rules %}{% set state = config.states[rule.id|string] %}
+                <tr><td class="text-nowrap">{{ rule.id }} · {{ rule.name }}</td>
+                    <td><select class="form-select form-select-sm" name="direction_{{ rule.id }}" aria-label="{{ rule.name }}方向" style="min-width:90px">{% for direction, label in [(1,'做多'),(-1,'做空'),(0,'空仓')] %}<option value="{{ direction }}" {% if values.get('direction_' ~ rule.id, state.direction)|int == direction %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></td>
+                    <td><div class="input-group input-group-sm" style="min-width:100px"><input class="form-control" name="allocation_{{ rule.id }}" aria-label="{{ rule.name }}仓位" type="number" min="0" max="100" step="0.1" required value="{{ values.get('allocation_' ~ rule.id, state.allocation_pct) }}"><span class="input-group-text">%</span></div></td>
+                </tr>
+            {% endfor %}</tbody>
+        </table></div>
+        <div class="card-body py-2"><p class="small text-body-secondary mb-1">选“空仓”或把仓位设为 0%，该状态就不交易。日频按方向做 1 手 IM，每点 200 元。仓位百分比用于礼拜攻势，是每笔新仓的使用比例。</p><p class="small text-body-secondary mb-0">前三行业择时：做多时买满，其他情况空仓。“前三行业（≥60）”仍要求合格股票不少于 60 只。</p></div>
+    </div>
+    <div class="card mb-3">
+        <div class="card-header"><strong>试算一下</strong></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-6"><label class="form-label small" for="sample_count">合格股票数</label><input class="form-control" id="sample_count" name="sample_count" type="number" min="0" max="10000" step="1" placeholder="输入股票数" value="{{ values.get('sample_count', '') }}"></div>
+                <div class="col-6"><label class="form-label small" for="sample_probability">前日预测准确率（%）</label><input class="form-control" id="sample_probability" name="sample_probability" type="number" min="0" max="100" step="0.01" placeholder="输入概率" value="{{ values.get('sample_probability', '') }}"></div>
+            </div>
+            {% if trial %}<div class="alert alert-info mt-3 mb-0" id="strategyTrialResult">合格股票数 {{ trial.count }}、概率 {{ "%g"|format(trial.probability) }}% → <strong>{{ trial.state_id }} · {{ trial.market_state }}</strong>。日频 IM {{ '做多 1 手' if trial.direction > 0 else ('做空 1 手' if trial.direction < 0 else '空仓') }}，礼拜攻势股指 {{ trial.position }}。</div>{% endif %}
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        <button class="btn btn-outline-info" type="submit" name="action" value="preview">预览 / 试算</button>
+        <button class="btn btn-primary" type="submit" name="action" value="save">{{ "保存系统默认" if is_default else "保存我的设置" }}</button>
+        <button class="btn btn-outline-warning" type="submit" name="action" value="restore" formnovalidate {% if not document.history %}disabled{% endif %}>恢复上一版</button>
+        <button class="btn btn-outline-secondary" type="submit" name="action" value="initialize" formnovalidate>恢复初始设置</button>
+    </div>
+    <p class="small text-body-secondary mb-4">“恢复初始设置”会填回最初那组参数，保存后生效。</p>
+</form>
+<div class="card mb-3"><div class="card-header"><strong>{{ '规则预览（未保存）' if previewed else '当前规则' }}</strong></div>
+    <div class="table-responsive"><table class="table table-dark table-striped table-sm mb-0"><thead><tr><th>状态</th><th>判断条件（按顺序）</th><th>礼拜攻势股指</th><th>日频 IM</th></tr></thead><tbody>
+    {% for rule in rules %}<tr><td class="text-nowrap">{{ rule.id }} · {{ rule.name }}</td><td>{{ rule.condition }}</td><td class="text-nowrap">{{ rule.position }}</td><td>{{ '做多 1 手' if rule.direction > 0 else ('做空 1 手' if rule.direction < 0 else '空仓') }}</td></tr>{% endfor %}
+    </tbody></table></div>
+</div>
+<details class="card"><summary class="card-header">修改记录</summary><div class="table-responsive"><table class="table table-dark table-sm mb-0"><thead><tr><th>版本</th><th>保存时间</th><th>操作账号</th></tr></thead><tbody>
+    <tr><td>{{ '系统默认' if document.version == 0 else 'v' ~ document.version }}（当前）</td><td>{{ '—' if document.version == 0 else document.updated_at }}</td><td>{{ document.updated_by }}</td></tr>
+    {% for revision in (document.history|reverse|list)[:10] %}<tr><td>{{ '系统默认' if revision.version == 0 else 'v' ~ revision.version }}</td><td>{{ '—' if revision.version == 0 else revision.updated_at }}</td><td>{{ revision.updated_by }}</td></tr>{% endfor %}
+</tbody></table></div></details>
+{% endblock %}

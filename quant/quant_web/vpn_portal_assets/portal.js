@@ -1,5 +1,11 @@
 'use strict';
 (() => {
+  const dateFormatterCache = new Map();
+  function dateFormatter(locale, options) {
+    const key = locale + JSON.stringify(options);
+    if (!dateFormatterCache.has(key)) dateFormatterCache.set(key, new Intl.DateTimeFormat(locale, options));
+    return dateFormatterCache.get(key);
+  }
   const $ = id => document.getElementById(id);
   const platformNames = { windows: 'Windows', macos: 'macOS', ios: 'iPhone / iOS', android: 'Android', linux: 'Linux' };
   const clientNames = { clash: 'Clash', shadowrocket: 'Shadowrocket', uri: '节点 URI' };
@@ -46,7 +52,7 @@
     }
     return result;
   }
-  function safeUser(value) { return value ? safeFields(value, ['id', 'name', 'username', 'role']) : null; }
+  function safeUser(value) { return value ? safeFields(value, ['id', 'name', 'username', 'role', 'quant_enabled']) : null; }
   function isBusy() { return mutationBusy || sessionExpired || ['device-dialog', 'account-dialog', 'decision-dialog', 'policy-dialog', 'grant-dialog'].some(key => $(key)?.open); }
 
   function message(text, kind = 'notice', withLogin = false) {
@@ -72,10 +78,10 @@
   function formatBytes(value) { return window.VPNViewModel.gb(value) + (window.VPNViewModel.known(value) ? ' GB' : ''); }
   function dateTime(epoch) {
     if (epoch === null || epoch === undefined || !Number.isFinite(Number(epoch))) return '暂无记录';
-    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(Number(epoch) * 1000));
+    return dateFormatter('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(Number(epoch) * 1000));
   }
   function dayLabel(epoch) {
-    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' }).format(new Date(Number(epoch) * 1000));
+    return dateFormatter('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit' }).format(new Date(Number(epoch) * 1000));
   }
   function node(tag, className, text) {
     const result = document.createElement(tag);
@@ -129,6 +135,9 @@
   function renderIdentity() {
     $('account-name').textContent = user ? `${identityName(user)}${user.username && user.name ? ` · @${user.username}` : ''}` : '账户';
     $('account-role').textContent = admin ? '管理员' : '会员';
+    const showQuantLink = admin || Boolean(user && user.quant_enabled);
+    $('quant-backtest-link').hidden = !showQuantLink;
+    $('quant-backtest-link').style.display = showQuantLink ? 'flex' : 'none';
     emit('vpn:identity', { user: safeUser(user), admin, enabled });
   }
   function showWorkspace() { $('access-gate').hidden = true; $('workspace').hidden = false; }
@@ -156,7 +165,7 @@
     if ($('copy-uri')) $('copy-uri').disabled = true;
     if ($('copy-uri')) $('copy-uri').onclick = null;
     if ($('recommended-label')) $('recommended-label').textContent = '—';
-    for (const id of ['clash-deeplink', 'shadowrocket-deeplink']) {
+    for (const id of ['clash-deeplink', 'shadowrocket-deeplink', 'shadowrocket-rules-deeplink']) {
       const link = $(id); if (link) { link.href = '#'; link.setAttribute('aria-disabled', 'true'); }
     }
     setStatus('copy-status', ''); setStatus('detail-status', '');
@@ -344,8 +353,10 @@
     if ($('account-form')) {
       document.querySelectorAll('#account-form input, #account-form select, #account-form button').forEach(control => {
         if (control.id === 'account-save') return;
+        if (control.id === 'account-quant-enabled' || control.id === 'account-enabled') return;
         control.disabled = value || (control.id === 'account-role-select' && isSelfAccount(editingAccount)) || sessionExpired;
       });
+      syncAccountPermissionControls();
     }
     if ($('target-user')) $('target-user').disabled = value || sessionExpired;
     if (admin && users.length) renderAdminUsers();
@@ -370,12 +381,12 @@
     return detail.clash_url || detail.shadowrocket_url || detail.uri || '';
   }
   function formatLabel(key) { return key === 'clash_url' ? 'Clash 订阅' : key === 'shadowrocket_url' ? 'Shadowrocket 自动更新' : '节点 URI'; }
-  async function copyText(value, label) {
+  async function copyText(value, label, privateValue = true) {
     if (!value) return;
     try {
       await navigator.clipboard.writeText(value);
       $('manual-copy').value = ''; $('manual-copy').hidden = true;
-      setStatus('copy-status', `${label}已复制。请勿分享给其他人。`);
+      setStatus('copy-status', `${label}已复制。${privateValue ? '请勿分享给其他人。' : '在 Shadowrocket 的配置页导入即可。'}`);
     } catch (_) {
       $('manual-copy').value = value; $('manual-copy').hidden = false; $('manual-copy').focus(); $('manual-copy').select();
       setStatus('copy-status', '剪贴板不可用，请全选下方内容并手动复制。', true);
@@ -413,8 +424,12 @@
       button.type = 'button'; button.addEventListener('click', () => copyText(value, formatLabel(key))); $('format-switch').append(button);
     });
     const clashLink = detail.clash_url ? `clash://install-config?url=${encodeURIComponent(detail.clash_url)}` : '';
-    const shadowrocketLink = detail.uri ? `shadowrocket://add/${encodeURIComponent(detail.uri)}` : '';
+    const shadowrocketLink = detail.shadowrocket_url ? `shadowrocket://add/${encodeURIComponent(detail.shadowrocket_url)}` : '';
+    const rulesURL = detail.shadowrocket_rules_url || `${location.origin}/vpn/rules/unified.conf`;
+    const rulesLink = `shadowrocket://config/add/${encodeURIComponent(rulesURL)}`;
     setExternalLink('clash-deeplink', clashLink); setExternalLink('shadowrocket-deeplink', shadowrocketLink);
+    setExternalLink('shadowrocket-rules-deeplink', rulesLink);
+    $('copy-rules-url').onclick = () => copyText(rulesURL, '分流规则链接', false);
     $('copy-uri').disabled = !detail.uri; $('copy-uri').onclick = () => copyText(detail.uri, '节点 URI');
     $('manual-copy').value = ''; $('manual-copy').hidden = true;
     setStatus('copy-status', ''); setStatus('detail-status', '');
@@ -435,7 +450,8 @@
     $('device-qr').removeAttribute('src'); $('device-qr').hidden = true;
     $('copy-recommended').disabled = true; $('copy-uri').disabled = true;
     $('copy-recommended').onclick = null; $('copy-uri').onclick = null; $('recommended-label').textContent = '—';
-    setExternalLink('clash-deeplink', ''); setExternalLink('shadowrocket-deeplink', '');
+    setExternalLink('clash-deeplink', ''); setExternalLink('shadowrocket-deeplink', ''); setExternalLink('shadowrocket-rules-deeplink', '');
+    if ($('copy-rules-url')) $('copy-rules-url').onclick = null;
     $('device-detail').hidden = false;
     emit('vpn:detail-loading',{id});
     try {
@@ -555,7 +571,7 @@
     const selector = $('target-user'), currentValue = selector.value;
     selector.replaceChildren();
     users.forEach(value => {
-      const opt = node('option', '', `${identityName(value)}${value.username ? ` · @${value.username}` : ''}${value.enabled ? '' : ' · VPN 未开通'}`);
+      const opt = node('option', '', `${identityName(value)}${value.username ? ` · @${value.username}` : ''} · 量化回测${value.role === 'admin' || value.quant_enabled ? '已开通' : '未开通'} · VPN${value.role === 'admin' || value.enabled ? '已开通' : '未开通'}`);
       opt.value = String(value.id); selector.append(opt);
     });
     const selfId = user && user.id !== undefined ? String(user.id) : '';
@@ -585,19 +601,21 @@
       row.dataset.userId = String(value.id);
       row.dataset.search = [value.id, value.name, value.username, value.role].filter(item => item !== null && item !== undefined).join(' ').toLowerCase();
       const roleLabel = value.role === 'admin' ? '全站管理员' : '普通用户';
-      const subline = `@${value.username || '—'} · ${roleLabel} · ${value.enabled ? 'VPN 已开通' : 'VPN 未开通'}${value.email ? ` · ${value.email}` : ''}`;
+      const quantEnabled = value.role === 'admin' || Boolean(value.quant_enabled);
+      const vpnEnabled = value.role === 'admin' || Boolean(value.enabled);
+      const subline = `@${value.username || '—'} · ${roleLabel} · 量化回测${quantEnabled ? '已开通' : '未开通'} · VPN${vpnEnabled ? '已开通' : '未开通'}${value.email ? ` · ${value.email}` : ''}`;
       identity.append(node('strong', '', identityName(value)), node('small', '', subline));
       const actions = node('div', 'admin-user-actions');
       const targetButton = node('button', 'quiet-button', '管理设备'); targetButton.type = 'button'; targetButton.disabled = mutationBusy || sessionExpired;
       targetButton.addEventListener('click', () => { emit('vpn:manage-user', { id: value.id }); $('target-user').value = String(value.id); setTarget(value); });
       const editButton = node('button', 'quiet-button', '编辑用户'); editButton.type = 'button'; editButton.disabled = mutationBusy || sessionExpired;
       editButton.addEventListener('click', () => openAccountForm(value));
-      const accessButton = node('button', `quiet-button${value.enabled ? ' permission-on' : ''}`, value.enabled ? '停用 VPN' : '开通 VPN');
-      accessButton.type = 'button'; accessButton.disabled = mutationBusy || sessionExpired;
-      accessButton.addEventListener('click', () => toggleUserAccess(value, accessButton));
+      const accessButton = node('button', `quiet-button${vpnEnabled ? ' permission-on' : ''}`, vpnEnabled ? '停用 VPN' : '开通 VPN');
+      accessButton.type = 'button'; accessButton.disabled = mutationBusy || sessionExpired || value.role === 'admin';
+      if (value.role !== 'admin') accessButton.addEventListener('click', () => toggleUserAccess(value, accessButton));
       actions.append(targetButton, editButton, accessButton); row.append(identity, actions); host.append(row);
     });
-    emit('vpn:users', { users: users.map(value => ({ ...safeUser(value), enabled: Boolean(value.enabled) })) });
+    emit('vpn:users', { users: users.map(value => ({ ...safeUser(value), quant_enabled: Boolean(value.quant_enabled), enabled: Boolean(value.enabled) })) });
   }
   async function toggleUserAccess(value, button) {
     if (mutationBusy || sessionExpired) return;
@@ -619,6 +637,14 @@
   });
 
   function isSelfAccount(value) { return Boolean(user && value && String(user.id) === String(value.id)); }
+  function syncAccountPermissionControls() {
+    const forced = $('account-role-select').value === 'admin' || isSelfAccount(editingAccount);
+    ['account-quant-enabled', 'account-enabled'].forEach(id => {
+      const control = $(id);
+      if (forced) control.checked = true;
+      control.disabled = forced || mutationBusy || sessionExpired;
+    });
+  }
   function openAccountForm(value = null) {
     if (!admin || mutationBusy || sessionExpired) return;
     editingAccount = value;
@@ -633,7 +659,9 @@
     $('account-password-hint').textContent = value ? '留空保持当前密码不变；如需修改，填写 8–128 位。' : '新增用户必填，8–128 位。';
     $('account-role-select').value = value ? value.role || 'user' : 'user';
     $('account-role-select').disabled = isSelfAccount(value);
+    $('account-quant-enabled').checked = value ? Boolean(value.quant_enabled) : false;
     $('account-enabled').checked = value ? Boolean(value.enabled) : false;
+    syncAccountPermissionControls();
     $('account-form-error').textContent = '';
     $('account-save').disabled = false;
     $('account-dialog').showModal(); $('account-username').focus();
@@ -650,6 +678,7 @@
     else clearAccountForm();
   }
   $('add-account').addEventListener('click', () => openAccountForm());
+  $('account-role-select').addEventListener('change', syncAccountPermissionControls);
   $('account-dialog-close').addEventListener('click', closeAccountForm);
   $('account-cancel').addEventListener('click', closeAccountForm);
   $('account-dialog').addEventListener('close', clearAccountForm);
@@ -673,7 +702,9 @@
     if ((!editing && (password.length < 8 || password.length > 128)) || (editing && password && (password.length < 8 || password.length > 128))) {
       formError.textContent = '密码长度须为 8–128 位。'; $('account-password').focus(); return;
     }
-    const body = { username, name, email, role: self ? editing.role : $('account-role-select').value, enabled: $('account-enabled').checked };
+    const role = self ? editing.role : $('account-role-select').value;
+    const forced = role === 'admin' || self;
+    const body = { username, name, email, role, quant_enabled: forced || $('account-quant-enabled').checked, enabled: forced || $('account-enabled').checked };
     if (password) body.password = password;
     const targetId = targetUser && targetUser.id;
     setMutationBusy(true); $('account-save').disabled = true;

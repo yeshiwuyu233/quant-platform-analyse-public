@@ -95,6 +95,7 @@ function renderWinRateTrend(domId, records) {
             }
         ]
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     window.addEventListener('resize', () => chart.resize());
 }
 
@@ -124,6 +125,7 @@ function renderAlphaTrend(domId, records) {
             }
         }]
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     window.addEventListener('resize', () => chart.resize());
 }
 
@@ -180,6 +182,7 @@ function renderNextDayTrend(domId, records, indexTrend) {
             itemStyle: { color: '#e68bc8' }
         }]
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     window.addEventListener('resize', () => chart.resize());
 }
 
@@ -248,28 +251,22 @@ function buildShortPositionRanges(records) {
 }
 
 function applyShortPositionBackground(chart, records) {
-    const ranges = buildShortPositionRanges(records);
-    const grid = chart.getModel().getComponent('grid').coordinateSystem.getRect();
-    const band = grid.width / records.length;
-    chart.setOption({
-        graphic: [{
-            id: 'short-position-bands',
-            type: 'group',
-            silent: true,
-            z: 0,
-            children: ranges.map(range => ({
-                type: 'rect',
-                shape: {
-                    x: grid.x + range.startIndex * band,
-                    y: grid.y,
-                    width: (range.endIndex - range.startIndex + 1) * band,
-                    height: grid.height
-                },
-                style: { fill: 'rgba(220,53,69,0.12)' }
-            }))
-        }]
-    });
+    const model = typeof chart.getModel === 'function' ? chart.getModel() : null;
+    const axis = model && model.getComponent('xAxis').axis;
+    const grid = model && model.getComponent('grid').coordinateSystem.getRect();
+    const width = axis ? axis.getBandWidth() : (grid && records.length ? grid.width / records.length : 1);
+    // A native vertical band for each short session follows the category axis.
+    // Its width is one visible session, so isolated days and zoomed windows are
+    // correct without retaining stale pixel-graphic children or zero-width areas.
+    const data = records.filter(record => String(record.futures_position || '').startsWith('做空'))
+        .map(record => ({xAxis: record.date}));
+    chart.setOption({series: [{name: '股指择时（状态仓位）', markLine: {
+        silent: true, z: 0, symbol: 'none', label: {show: false},
+        lineStyle: {color: 'rgba(220,53,69,0.12)', width: Math.max(0, width), type: 'solid', cap: 'butt'},
+        data
+    }}]});
 }
+
 
 function renderLowGt1CountRanges(domId, records, minCount = 60) {
     const el = document.getElementById(domId);
@@ -306,7 +303,7 @@ const WEEKLY_STRATEGY_SERIES = [
         areaColor: 'rgba(32,201,151,0.14)'
     },
     {
-        name: '股指择时（±50%）',
+        name: '股指择时（状态仓位）',
         color: '#6f42c1',
         symbol: 'none',
         width: 2,
@@ -398,7 +395,9 @@ function renderWeeklyStrategyNav(domId, records) {
         yAxis: { type: 'value', min: 'dataMin' },
         series: buildWeeklyStrategySeries(records, 'navKey', false)
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     applyShortPositionBackground(chart, records);
+    if (typeof chart.on === 'function') chart.on('datazoom', () => applyShortPositionBackground(chart, records));
     window.addEventListener('resize', () => {
         chart.resize();
         applyShortPositionBackground(chart, records);
@@ -426,48 +425,52 @@ function renderWeeklyStrategyDrawdown(domId, records) {
         yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value}%' } },
         series: buildWeeklyStrategySeries(records, 'drawdownKey', true)
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     applyShortPositionBackground(chart, records);
+    if (typeof chart.on === 'function') chart.on('datazoom', () => applyShortPositionBackground(chart, records));
     window.addEventListener('resize', () => {
         chart.resize();
         applyShortPositionBackground(chart, records);
     });
 }
 
-function renderDailyIndexStrategyNav(domId, records) {
+function renderDailyImPnl(domId, records) {
     const el = document.getElementById(domId);
     if (!el || !records || !records.length) return;
     const chart = echarts.init(el, 'dark');
     chart.setOption({
-        tooltip: { trigger: 'axis', valueFormatter: v => Number(v).toFixed(6) },
-        legend: { data: ['日频策略净值'], top: 0 },
+        tooltip: { trigger: 'axis', valueFormatter: v => v == null ? '—' : Number(v).toLocaleString('zh-CN') + ' 元' },
+        legend: { data: ['累计毛盈亏（元）'], top: 0 },
         grid: { left: '3%', right: '4%', top: 48, bottom: '8%', containLabel: true },
         xAxis: { type: 'category', boundaryGap: false, data: records.map(r => r.date), axisLabel: { rotate: 30 } },
-        yAxis: { type: 'value', min: 'dataMin', scale: true },
+        yAxis: { type: 'value', axisLabel: { formatter: '{value} 元' } },
         series: [{
-            name: '日频策略净值', type: 'line', data: records.map(r => r.nav),
+            name: '累计毛盈亏（元）', type: 'line', data: records.map(r => r.cumulative_pnl),
             showSymbol: false, smooth: false, lineStyle: { width: 2, color: '#6f42c1' },
             itemStyle: { color: '#6f42c1' }, areaStyle: { color: 'rgba(111,66,193,0.12)' }
         }]
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     window.addEventListener('resize', () => chart.resize());
 }
 
-function renderDailyIndexStrategyDrawdown(domId, records) {
+function renderDailyImDrawdown(domId, records) {
     const el = document.getElementById(domId);
     if (!el || !records || !records.length) return;
     const chart = echarts.init(el, 'dark');
     chart.setOption({
-        tooltip: { trigger: 'axis', valueFormatter: v => Number(v).toFixed(2) + '%' },
-        legend: { data: ['日频策略回撤'], top: 0 },
+        tooltip: { trigger: 'axis', valueFormatter: v => v == null ? '—' : Number(v).toLocaleString('zh-CN') + ' 元' },
+        legend: { data: ['盈亏回撤（元）'], top: 0 },
         grid: { left: '3%', right: '4%', top: 48, bottom: '8%', containLabel: true },
         xAxis: { type: 'category', boundaryGap: false, data: records.map(r => r.date), axisLabel: { rotate: 30 } },
-        yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value}%' } },
+        yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value} 元' } },
         series: [{
-            name: '日频策略回撤', type: 'line', data: records.map(r => r.drawdown),
+            name: '盈亏回撤（元）', type: 'line', data: records.map(r => r.drawdown_yuan),
             showSymbol: false, smooth: false, lineStyle: { width: 2, color: '#dc3545' },
             itemStyle: { color: '#dc3545' }, areaStyle: { color: 'rgba(220,53,69,0.12)' }
         }]
     });
+    if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
     window.addEventListener('resize', () => chart.resize());
 }
 
@@ -612,7 +615,7 @@ function renderWeeklySummary(domId, data) {
     } catch(e) {
         console.error('[weeklyChart] render error:', e.message, e.stack);
         const el = document.getElementById(domId);
-        if (el) el.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">⚠️ 图表渲染失败: ' + e.message + '</div>';
+        if (el) el.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">图表未能显示，请刷新重试。错误信息：' + e.message + '</div>';
     }
 }
 
@@ -662,12 +665,13 @@ function renderWeeklyWinRateTrend(domId, records) {
                 itemStyle: { color: colors[i] }
             }))
         });
-        window.addEventListener('resize', () => chart.resize());
+        if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
+    window.addEventListener('resize', () => chart.resize());
         console.log('[weeklyWinRate] rendered successfully');
     } catch(e) {
         console.error('[weeklyWinRate] render error:', e.message, e.stack);
         const el = document.getElementById(domId);
-        if (el) el.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">⚠️ 图表渲染失败: ' + e.message + '</div>';
+        if (el) el.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">图表未能显示，请刷新重试。错误信息：' + e.message + '</div>';
     }
 }
 
@@ -721,12 +725,13 @@ function renderWeeklyReturnTrend(domId, records) {
                 }
             }))
         });
-        window.addEventListener('resize', () => chart.resize());
+        if (typeof registerChartTimeRange === 'function') registerChartTimeRange(chart, records);
+    window.addEventListener('resize', () => chart.resize());
         console.log('[weeklyReturn] rendered successfully');
     } catch(e) {
         console.error('[weeklyReturn] render error:', e.message, e.stack);
         const el = document.getElementById(domId);
-        if (el) el.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">⚠️ 图表渲染失败: ' + e.message + '</div>';
+        if (el) el.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">图表未能显示，请刷新重试。错误信息：' + e.message + '</div>';
     }
 }
 
@@ -739,7 +744,7 @@ function renderWeeklyTrajectory(domId, summaryRows) {
         // 取可用天数（每组一致）
         var nAvail = summaryRows[0] ? (summaryRows[0]['可用天数'] || 0) : 0;
         if (nAvail === 0) {
-            el.innerHTML = '<div style="color:#888;padding:60px;text-align:center;font-size:15px;">⏳ 暂无结算数据（后续交易日尚未到来），待有新数据后自动更新</div>';
+            el.innerHTML = '<div style="color:#888;padding:60px;text-align:center;font-size:15px;">还没有收益数据，更新后会显示在这里。</div>';
             return;
         }
 
@@ -808,7 +813,7 @@ function renderWeeklyTrajectory(domId, summaryRows) {
     } catch(e) {
         console.error('[trajectoryChart] render error:', e.message);
         var el2 = document.getElementById(domId);
-        if (el2) el2.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">⚠️ 图表渲染失败: ' + e.message + '</div>';
+        if (el2) el2.innerHTML = '<div style="color:#dc3545;padding:40px;text-align:center;">图表未能显示，请刷新重试。错误信息：' + e.message + '</div>';
     }
 }
 
@@ -871,7 +876,7 @@ function renderColdCombinedTrajectory(domId, trajectory) {
 
         var keys = Object.keys(trajectory).sort();
         if (keys.length === 0) {
-            el.innerHTML = '<div style="color:#888;padding:60px;text-align:center;">暂无冷门行业合并数据</div>';
+            el.innerHTML = '<div style="color:#888;padding:60px;text-align:center;">还没有冷门行业的收益数据</div>';
             return;
         }
 

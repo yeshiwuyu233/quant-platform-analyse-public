@@ -1,6 +1,17 @@
 {% macro date_nav(prev_date, next_date, all_dates, current_date, base_path) %}
 {% set md = group_dates_by_month(all_dates, current_date) %}
 {% if md %}
+<div class="card mb-3" data-report-date-controls data-current-date="{{ current_date }}" data-base-path="{{ base_path }}">
+  <div class="card-body py-2 d-flex flex-wrap align-items-end gap-2">
+    <label class="small">报告范围<select class="form-select form-select-sm" data-report-period><option value="day">日</option><option value="month" selected>月</option><option value="quarter">季度</option><option value="year">年</option></select></label>
+    <label class="small">选择日期<input type="date" class="form-control form-control-sm" data-report-anchor></label>
+    <label class="small">范围内的报告<select class="form-select form-select-sm" data-report-selection aria-label="范围内的报告"></select></label>
+    <button type="button" class="btn btn-sm btn-primary" data-report-open>查看报告</button>
+    <span class="small text-secondary" data-report-empty hidden>这段时间没有报告</span>
+    <span class="small text-body-secondary">下面的图表对应所选报告。</span>
+  </div>
+  <script type="application/json" data-report-dates>{{ all_dates|tojson }}</script>
+</div>
 <div class="date-nav-container">
   <!-- 月份下拉 -->
   <div class="date-nav-month">

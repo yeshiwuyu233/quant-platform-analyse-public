@@ -3,7 +3,7 @@
 <div class="container-fluid py-3">
 
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">🩺 系统健康状态</h4>
+    <h4 class="mb-0">系统状态</h4>
     <span class="small text-muted">
       {% if guardian.alive %}
         ✅ Guardian 正常 · {{ guardian.seconds_ago }}秒前更新
@@ -92,7 +92,7 @@
     <div class="col-md-8">
       <div class="card h-100">
         <div class="card-header py-2 d-flex justify-content-between">
-          <span>📈 流水线运行历史</span>
+          <span>数据更新记录</span>
           <span class="small text-muted">最后: {{ pipeline.last_run[:40] if pipeline.last_run != '未知' else '暂无' }}</span>
         </div>
         <div class="card-body py-2">
@@ -107,7 +107,7 @@
             {% endfor %}
           </div>
           {% else %}
-          <div class="text-muted small text-center py-3">暂无流水线运行记录</div>
+          <div class="text-muted small text-center py-3">还没有更新记录</div>
           {% endif %}
         </div>
       </div>
@@ -133,11 +133,11 @@
         <div class="card-header py-2">🔍 数据完整性</div>
         <div class="card-body">
           {% if data_validation is not defined or data_validation.keys()|length == 0 %}
-            <div class="text-center py-3 text-muted">⏳ 等待 Guardian 下次校验...</div>
+            <div class="text-center py-3 text-muted">等待下次检查…</div>
           {% elif data_validation.ok %}
             <div class="d-flex align-items-center mb-2">
               <span class="badge bg-success fs-6 me-2">✅</span>
-              <span>xlsx {{ data_validation.sheets }} sheets 通过</span>
+              <span>Excel 的 {{ data_validation.sheets }} 张表已通过检查</span>
             </div>
             {% if data_validation.warnings %}
               {% for w in data_validation.warnings %}
@@ -224,7 +224,7 @@ echartsReady(function(){
       series:[{type:'bar',data:sizes,barWidth:18,
         itemStyle:{color:'#0d6efd'}}]
     });
-  } catch(e){ el.innerHTML='<div class="text-danger">图表渲染失败</div>'; }
+  } catch(e){ el.innerHTML='<div class="text-danger">图表未能显示，请刷新重试</div>'; }
 });
 
 function echartsReady(fn){

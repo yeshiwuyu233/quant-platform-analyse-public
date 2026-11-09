@@ -111,7 +111,7 @@ def refresh_market_cache(full_date: str) -> bool:
 
 
 def refresh_index_cache() -> bool:
-    """Best-effort refresh of CSI500 and CSI1000 history chart data."""
+    """Best-effort refresh of index charts and daily IM settlement data."""
     try:
         try:
             from . import index_service
@@ -128,6 +128,19 @@ def refresh_index_cache() -> bool:
         except Exception as e:
             log.warning("[!] %s指数缓存刷新失败: %s", name, e)
             success = False
+    try:
+        try:
+            from . import im_quotes
+        except ImportError:
+            import im_quotes
+        added, failures = im_quotes.refresh_recent()
+        log.info(">>> IM 行情新增 %s 天", added)
+        if failures:
+            log.warning("[!] IM 行情待补齐: %s", failures)
+            success = False
+    except Exception as e:
+        log.warning("[!] IM 行情刷新失败: %s", e)
+        success = False
     return success
 
 
