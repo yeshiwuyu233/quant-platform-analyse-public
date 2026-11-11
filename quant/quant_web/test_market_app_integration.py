@@ -133,15 +133,12 @@ class TestMarketUploadPipeline(unittest.TestCase):
             ) as run, mock.patch.object(
                 market_app, "_build_pipeline_email", return_value="body"
             ), mock.patch.object(
-                market_app.im_quotes, "refresh_quotes", return_value=(1, {})
-            ) as refresh_im, mock.patch.object(
                 market_app, "_send_pipeline_notification"
             ):
                 market_app._run_pipeline_for_date("20260714", temp_csv)
 
         self.assertEqual(calls, [("persist", "20260714"), ("refresh", "20260714")])
         self.assertEqual(run.call_count, 2)
-        refresh_im.assert_called_once_with(["20260714"])
 
     def test_failed_report_is_reported_as_pipeline_failure(self):
         statuses = []
@@ -149,13 +146,11 @@ class TestMarketUploadPipeline(unittest.TestCase):
         with mock.patch.object(market_app, "_read_pipeline_status", return_value={"history": []}), \
              mock.patch.object(market_app, "_write_pipeline_status", side_effect=lambda status: statuses.append(status.copy())), \
              mock.patch.object(market_app.subprocess, "run", side_effect=results), \
-             mock.patch.object(market_app.im_quotes, "refresh_quotes") as refresh_im, \
              mock.patch.object(market_app, "_build_pipeline_email", return_value="body"), \
              mock.patch.object(market_app, "_send_pipeline_notification") as notify:
             market_app._run_pipeline_for_date("20260714")
         self.assertEqual(statuses[-1]["stage"], "failed")
         self.assertEqual(statuses[-1]["error"], "礼拜攻势生成失败")
-        refresh_im.assert_not_called()
         notify.assert_called_once_with(False, "body")
 
     def test_admin_upload_requires_a_nonempty_matching_csrf_value(self):

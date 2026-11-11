@@ -434,18 +434,18 @@ function renderWeeklyStrategyDrawdown(domId, records) {
     });
 }
 
-function renderDailyImPnl(domId, records) {
+function renderDailyIndexStrategyNav(domId, records) {
     const el = document.getElementById(domId);
     if (!el || !records || !records.length) return;
     const chart = echarts.init(el, 'dark');
     chart.setOption({
-        tooltip: { trigger: 'axis', valueFormatter: v => v == null ? '—' : Number(v).toLocaleString('zh-CN') + ' 元' },
-        legend: { data: ['累计毛盈亏（元）'], top: 0 },
+        tooltip: { trigger: 'axis', valueFormatter: v => Number(v).toFixed(6) },
+        legend: { data: ['日频策略净值'], top: 0 },
         grid: { left: '3%', right: '4%', top: 48, bottom: '8%', containLabel: true },
         xAxis: { type: 'category', boundaryGap: false, data: records.map(r => r.date), axisLabel: { rotate: 30 } },
-        yAxis: { type: 'value', axisLabel: { formatter: '{value} 元' } },
+        yAxis: { type: 'value', min: 'dataMin', scale: true },
         series: [{
-            name: '累计毛盈亏（元）', type: 'line', data: records.map(r => r.cumulative_pnl),
+            name: '日频策略净值', type: 'line', data: records.map(r => r.nav),
             showSymbol: false, smooth: false, lineStyle: { width: 2, color: '#6f42c1' },
             itemStyle: { color: '#6f42c1' }, areaStyle: { color: 'rgba(111,66,193,0.12)' }
         }]
@@ -454,18 +454,18 @@ function renderDailyImPnl(domId, records) {
     window.addEventListener('resize', () => chart.resize());
 }
 
-function renderDailyImDrawdown(domId, records) {
+function renderDailyIndexStrategyDrawdown(domId, records) {
     const el = document.getElementById(domId);
     if (!el || !records || !records.length) return;
     const chart = echarts.init(el, 'dark');
     chart.setOption({
-        tooltip: { trigger: 'axis', valueFormatter: v => v == null ? '—' : Number(v).toLocaleString('zh-CN') + ' 元' },
-        legend: { data: ['盈亏回撤（元）'], top: 0 },
+        tooltip: { trigger: 'axis', valueFormatter: v => Number(v).toFixed(2) + '%' },
+        legend: { data: ['日频策略回撤'], top: 0 },
         grid: { left: '3%', right: '4%', top: 48, bottom: '8%', containLabel: true },
         xAxis: { type: 'category', boundaryGap: false, data: records.map(r => r.date), axisLabel: { rotate: 30 } },
-        yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value} 元' } },
+        yAxis: { type: 'value', max: 0, axisLabel: { formatter: '{value}%' } },
         series: [{
-            name: '盈亏回撤（元）', type: 'line', data: records.map(r => r.drawdown_yuan),
+            name: '日频策略回撤', type: 'line', data: records.map(r => r.drawdown),
             showSymbol: false, smooth: false, lineStyle: { width: 2, color: '#dc3545' },
             itemStyle: { color: '#dc3545' }, areaStyle: { color: 'rgba(220,53,69,0.12)' }
         }]

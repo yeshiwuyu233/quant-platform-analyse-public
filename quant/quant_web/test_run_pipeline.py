@@ -2,20 +2,18 @@ import unittest
 from unittest.mock import patch
 
 
-@patch('quant_web.im_quotes.refresh_recent', return_value=(1, {}))
 class TestRunPipelineIndexRefresh(unittest.TestCase):
-    def test_refresh_index_cache_updates_both_indices(self, refresh_im):
+    def test_refresh_index_cache_updates_both_indices(self):
         from quant_web import run_pipeline
 
         with patch("quant_web.index_service.update_index_cache", return_value={"sh000905": 3, "sh000852": 3}) as update:
             ok = run_pipeline.refresh_index_cache()
 
         self.assertTrue(ok)
-        refresh_im.assert_called_once_with()
         self.assertEqual([call.kwargs["symbols"] for call in update.call_args_list],
                          [["sh000905"], ["sh000852"]])
 
-    def test_refresh_index_cache_continues_after_one_failure(self, refresh_im):
+    def test_refresh_index_cache_continues_after_one_failure(self):
         from quant_web import run_pipeline
 
         with patch("quant_web.index_service.update_index_cache", side_effect=[RuntimeError("network down"), {"sh000852": 3}]) as update:
@@ -23,9 +21,8 @@ class TestRunPipelineIndexRefresh(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertEqual(update.call_count, 2)
-        refresh_im.assert_called_once_with()
 
-    def test_refresh_index_cache_is_best_effort(self, refresh_im):
+    def test_refresh_index_cache_is_best_effort(self):
         from quant_web import run_pipeline
 
         with patch("quant_web.index_service.update_index_cache", side_effect=RuntimeError("network down")):

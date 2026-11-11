@@ -4,7 +4,7 @@
 
 {% if daily_index_prediction %}
 <div class="card mb-4" id="todayIndexPrediction">
-    <div class="card-header"><strong>{{ '下一交易日 IM 方向' if daily_index_prediction.get('is_forecast') else '今日 IM 方向' }}</strong></div>
+    <div class="card-header"><strong>{{ '下一交易日股指方向' if daily_index_prediction.get('is_forecast') else '今日股指方向' }}</strong></div>
     <div class="card-body">
         <div class="d-flex flex-wrap align-items-center gap-3">
             <span>信号日：{{ daily_index_prediction.signal_date }}</span>
@@ -20,8 +20,8 @@
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2"><strong>六种市场状态</strong><span class="small text-body-secondary">{{ '系统默认' if strategy_document.source == 'default' else '个人设置' }} · <a href="/history/settings">策略设置</a></span></div>
     <div class="card-body pb-2"><p class="small text-body-secondary mb-2">从状态 1 开始，按顺序判断，符合条件就采用该状态。这里的“概率”是信号日已知的前日预测准确率；“合格股票”要求准确率 &gt;60%、今日指标 &gt;1。</p></div>
     <div class="table-responsive"><table class="table table-dark table-striped table-sm align-middle mb-0">
-        <thead><tr><th>顺序</th><th>市场状态</th><th>判断条件</th><th>日频 IM</th><th>礼拜攻势股指</th></tr></thead>
-        <tbody>{% for rule in strategy_rules %}<tr><td>{{ rule.id }}</td><td>{{ rule.name }}</td><td>{{ rule.condition }}</td><td>{{ '做多 1 手' if rule.direction > 0 else ('做空 1 手' if rule.direction < 0 else '空仓') }}</td><td class="{% if rule.direction > 0 %}text-success{% elif rule.direction < 0 %}text-danger{% else %}text-secondary{% endif %}">{{ rule.position }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th>顺序</th><th>市场状态</th><th>判断条件</th><th>股指方向</th></tr></thead>
+        <tbody>{% for rule in strategy_rules %}<tr><td>{{ rule.id }}</td><td>{{ rule.name }}</td><td>{{ rule.condition }}</td><td class="{% if rule.direction > 0 %}text-success{% elif rule.direction < 0 %}text-danger{% else %}text-secondary{% endif %}">{{ rule.position }}</td></tr>{% endfor %}</tbody>
     </table></div>
     <details class="card-body py-2 small text-body-secondary"><summary>判断说明</summary><p class="mt-2 mb-1">每一条都在前面的条件不符合时才判断，所以状态 3 排在状态 4～6 前面。概率等于“下行”或“振荡上限”时，算振荡；等于“超涨回调”时，算上行。</p><p class="mb-0">如果没有概率数据，但合格股票少于 {{ strategy_document.config.systemic_count }} 只，仍按状态 3 处理；其他数据不足的情况空仓。历史回测使用你现在的设置，收益未扣除交易成本。</p></details>
 </div>
@@ -143,26 +143,26 @@
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="card">
-            <div class="card-header"><strong>日频 IM 盈亏</strong></div>
+            <div class="card-header"><strong>日频股指收益</strong></div>
             <div class="card-body">
-                <p class="small text-body-secondary mb-2">按上一交易日的信号做多或做空 1 手。用同一 IM 合约当天的开收盘点差计算毛盈亏，每点 200 元。</p><details class="small text-body-secondary mb-2"><summary>计算说明</summary><p class="mt-2 mb-1">从当天挂牌的 IM 合约里，选上一交易日持仓量最大的合约。累计盈亏从回测首日加总，回撤用累计盈亏距历史高点的金额表示。</p><p class="mb-0">回测以中金所公布的开收盘价估算，未计手续费和滑点。</p></details>
-                <div id="dailyImPnlChart" style="height:380px;"></div>
-                <div id="dailyImDrawdownChart" style="height:280px;"></div>
+                <p class="small text-body-secondary mb-2">用上一交易日的数据决定今天的方向和仓位，按中证1000当天开盘到收盘的涨跌计算收益。</p><details class="small text-body-secondary mb-2"><summary>计算说明</summary><p class="mt-2 mb-1">实际敞口 = 股指仓位 × {{ "%g"|format(strategy_document.config.daily_leverage) }} 倍杠杆。净值从 1 开始计算，收益与礼拜攻势分开。</p><p class="mb-0">股指收益按现货指数估算，未扣除交易成本，也未考虑滑点和期现基差。选择日期只改变显示范围，净值仍从回测首日计算。</p></details>
+                <div id="dailyIndexStrategyNavChart" style="height:380px;"></div>
+                <div id="dailyIndexStrategyDrawdownChart" style="height:280px;"></div>
             </div>
         </div>
     </div>
 </div>
 <div class="card mb-4">
-    <div class="card-header"><strong>日频 IM 策略明细</strong></div>
+    <div class="card-header"><strong>日频股指策略明细</strong></div>
     <div class="card-body pb-2">
-        <p class="small text-body-secondary mb-0">信号先显示，开收盘价和盈亏等中金所日行情发布后补齐。</p>
+        <p class="small text-body-secondary mb-0">数据更新后，会先列出下一交易日的方向和仓位。行情、收益、净值和回撤等交易结束、数据齐全后再显示，此前为“-”。收益未扣除交易成本。</p>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive" style="max-height:500px">
             <table id="dailyHistoryTable" class="table table-dark table-striped table-sm text-nowrap align-middle mb-0">
                 <thead><tr>
                     <th>信号日</th><th>交易日</th><th>合格股票数</th><th>前日预测准确率</th><th>市场状态</th><th>方向</th>
-                    <th>合约</th><th>IM 开盘</th><th>IM 收盘</th><th>日内点差</th><th>毛盈亏（元）</th><th>累计盈亏（元）</th><th>回撤（元）</th>
+                    <th>中证1000开盘</th><th>收盘</th><th>指数日内涨跌</th><th>策略毛收益</th><th>净值</th><th>回撤</th>
                 </tr></thead>
                 <tbody>
                     {% for r in daily_index_details|reverse %}
@@ -171,13 +171,12 @@
                         <td>{% if r.prediction_accuracy is not none %}{{ "%.2f"|format(r.prediction_accuracy) }}%{% else %}-{% endif %}</td>
                         <td title="{{ r.state_reason }}">{% if r.state_id %}{{ r.state_id }} · {% endif %}{{ r.market_state }}</td>
                         <td><span class="badge {% if r.position.startswith('做空') %}text-bg-danger{% elif r.position.startswith('做多') %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ r.position }}</span></td>
-                        <td>{{ r.contract or '-' }}</td>
-                        {% for value in (r.im_open, r.im_close, r.im_points) %}
-                        <td>{{ "%.1f"|format(value) if value is not none else '-' }}</td>
-                        {% endfor %}
-                        {% for value in (r.pnl, r.cumulative_pnl, r.drawdown_yuan) %}
-                        <td>{{ "{:,.0f}".format(value) if value is not none else '-' }}</td>
-                        {% endfor %}
+                        <td>{{ "%.2f"|format(r.index_open) if r.index_open is not none else '-' }}</td>
+                        <td>{{ "%.2f"|format(r.index_close) if r.index_close is not none else '-' }}</td>
+                        <td>{% if r.index_return is not none %}{{ "%.4f"|format(r.index_return) }}%{% else %}-{% endif %}</td>
+                        <td>{% if r.strategy_return is not none %}{{ "%.4f"|format(r.strategy_return) }}%{% else %}-{% endif %}</td>
+                        <td>{% if r.nav is not none %}{{ "%.6f"|format(r.nav) }}{% else %}-{% endif %}</td>
+                        <td>{% if r.drawdown is not none %}{{ "%.2f"|format(r.drawdown) }}%{% else %}-{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -202,8 +201,8 @@ function renderStrategyMode(mode) {
         renderWeeklyStrategyDrawdown('weeklyStrategyDrawdownChart', weeklyStrategy);
         initWeeklyHistoryTable(weeklyDetails);
     } else {
-        renderDailyImPnl('dailyImPnlChart', dailyIndexStrategy);
-        renderDailyImDrawdown('dailyImDrawdownChart', dailyIndexStrategy);
+        renderDailyIndexStrategyNav('dailyIndexStrategyNavChart', dailyIndexStrategy);
+        renderDailyIndexStrategyDrawdown('dailyIndexStrategyDrawdownChart', dailyIndexStrategy);
     }
     renderedStrategyModes.add(mode);
 }

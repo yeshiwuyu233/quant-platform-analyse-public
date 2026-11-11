@@ -128,9 +128,10 @@ class TestTimingPageRouting(unittest.TestCase):
         self.assertIn('/history/timing', html)
         with web.app.test_request_context('/history/timing'), \
              patch.object(web.ds, 'get_weekly_strategy_history', return_value=[]), \
-             patch.object(web.ds, 'get_daily_im_strategy_details', return_value=[]), \
+             patch.object(web.ds, 'get_daily_index_strategy_history', return_value=[]), \
              patch.object(web.ds, 'get_weekly_strategy_details', return_value=[]), \
-             patch.object(web.ds, 'get_daily_index_strategy_details', side_effect=AssertionError('legacy cash calculation used')):
+             patch.object(web.ds, 'get_daily_index_strategy_details', return_value=[]), \
+             patch.object(web.ds, 'get_latest_daily_index_prediction', return_value=None):
             web.session['user'] = {'username': 'page-test', 'role': 'user', 'name': 'test'}
             html = web.timing_backtest.__wrapped__()
         self.assertIn('择时回测', html)

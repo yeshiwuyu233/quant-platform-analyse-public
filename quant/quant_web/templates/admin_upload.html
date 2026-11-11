@@ -90,8 +90,7 @@ function updateStatusUI(status) {
         if (status.date) {
             statusDetail.textContent = '上次: ' + status.date
                 + ' | ' + (status.finished_at || '')
-                + (status.error ? ' | ' + status.error : '')
-                + (status.im_pending ? ' | IM 行情待更新' : '');
+                + (status.error ? ' | ' + status.error : '');
         }
     }
 }

@@ -28,7 +28,6 @@ _PIPELINE_STATUS_PATH = os.path.join(_PROJECT_ROOT, "pipeline_status.json")
 
 import data_service as ds
 import db_service as dbs
-import im_quotes
 import market_store
 import market_writer
 import refresh_market_cache as market_cache_refresher
@@ -621,7 +620,7 @@ def _run_pipeline_for_date(date_yyyymmdd, temp_csv=None):
     date_mmdd = date_yyyymmdd[4:]  # "20260511" -> "0511"
 
     status = _read_pipeline_status()
-    for key in ('error', 'backtest_error', 'weekly_error', 'im_pending'):
+    for key in ('error', 'backtest_error', 'weekly_error'):
         status.pop(key, None)
     status["running"] = True
     status["date"] = date_mmdd
@@ -672,14 +671,7 @@ def _run_pipeline_for_date(date_yyyymmdd, temp_csv=None):
             status["weekly_error"] = (wk_result.stderr or wk_result.stdout or "")[-4000:]
 
         success = backtest_ok and weekly_ok
-        if success:
-            try:
-                _, missing = im_quotes.refresh_quotes([date_yyyymmdd])
-                status['im_pending'] = bool(missing)
-            except (OSError, ValueError) as exc:
-                status['im_pending'] = True
-                app.logger.warning('IM 行情待补齐 %s: %s', date_yyyymmdd, exc)
-        else:
+        if not success:
             failed_jobs = [name for name, ok in (('每日回测', backtest_ok), ('礼拜攻势', weekly_ok)) if not ok]
             status['error'] = '、'.join(failed_jobs) + '生成失败'
 
@@ -1430,17 +1422,12 @@ def timing_backtest():
         document = ds.strategy_config.load_document()
         with ds.strategy_config.using_settings(document['config']), ds.timing_input_session():
             weekly = ds.get_weekly_strategy_history()
-            today = ds._shanghai_today()
-            daily = ds.get_daily_im_strategy_details(today)
-            prediction = next((row for row in reversed(daily) if row['is_forecast'] or (
-                row['date_raw'] == today and row['state_id'] is not None
-                and row['prediction_accuracy'] is not None)), None)
-            last_settled = max((row['date_raw'] for row in daily if not row['is_pending']), default='')
+            daily = ds.get_daily_index_strategy_history()
             return render_template('timing_backtest.html',
-                                   weekly_strategy=weekly,
-                                   daily_index_strategy=[row for row in daily if row['date_raw'] <= last_settled],
+                                   weekly_strategy=weekly, daily_index_strategy=daily,
                                    weekly_details=ds.get_weekly_strategy_details(history=weekly),
-                                   daily_index_details=daily, daily_index_prediction=prediction,
+                                   daily_index_details=ds.get_daily_index_strategy_details(history=daily),
+                                   daily_index_prediction=ds.get_latest_daily_index_prediction(),
                                    strategy_document=document,
                                    strategy_rules=ds.strategy_config.rule_rows(document['config']))
 
