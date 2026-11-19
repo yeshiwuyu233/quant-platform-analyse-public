@@ -403,7 +403,7 @@
     const detail = currentDetail;
     $('device-detail').hidden = false;
     $('detail-title').textContent = detail.remark || '设备详情';
-    $('detail-summary').textContent = `${platformNames[detail.platform] || detail.platform || '未知平台'} · ${clientNames[detail.client] || detail.client || '未知客户端'} · ${detail.enabled ? '已启用' : '已停用'} · 最近活动 ${dateTime(detail.last_seen)} · HY2 节点计量，最近采集 ${listMeter && listMeter.last_success ? dateTime(listMeter.last_success) : '暂无成功记录'}`;
+    $('detail-summary').textContent = `${platformNames[detail.platform] || detail.platform || '未知平台'} · ${clientNames[detail.client] || detail.client || '未知客户端'} · ${detail.enabled ? '已启用' : '已停用'} · 最近活动 ${dateTime(detail.last_seen)} · ${detail.meter_scope || '原节点 HY2 用量'}，最近采集 ${listMeter && listMeter.last_success ? dateTime(listMeter.last_success) : '暂无成功记录'}`;
     $('detail-actions').replaceChildren();
     const edit = node('button', 'quiet-button', '编辑设备'); edit.type = 'button'; edit.disabled = mutationBusy;
     edit.addEventListener('click', () => openDeviceForm(detail)); $('detail-actions').append(edit);

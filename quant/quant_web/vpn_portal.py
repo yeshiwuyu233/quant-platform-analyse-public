@@ -143,7 +143,7 @@ def register_vpn_portal(app,users_db,socket_path,template_dir=None,assets_dir=No
     def download(name):return proxy('/downloads/'+name)
     @bp.get('/assets/<name>')
     def assets(name):
-        if name not in ('portal.js','portal.css','system.js','system.css','quota.js','quota.css','shell.js','shell.css','view-model.js','scene-lake.png'):return jsonify(error='not_found'),404
+        if name not in ('portal.js','portal.css','system.js','system.css','quota.js','quota.css','shell.js','shell.css','view-model.js','nodes.js','scene-lake.png'):return jsonify(error='not_found'),404
         return send_from_directory(assets_dir,name,max_age=86400)
     @bp.post('/logout')
     def logout():

@@ -26,7 +26,7 @@
 <p class="target-label" id="target-label">当前账户</p>
 </section></div>
 <section class="app-view" data-page="overview"><div class="app-overview-balance"><div class="app-balance-primary"><h2 class="app-section-title">可用流量</h2><div class="app-balance-number"><strong id="overview-remaining">正在读取</strong><small id="overview-unit"></small></div><p id="overview-buckets">套餐、追加与永久余额将分别显示。</p><div class="app-progress" hidden="" id="overview-progress"><i></i></div><div class="app-balance-caption"><span id="overview-used">本期已用：未知</span><span id="overview-monthly">每月额度：未知</span></div></div><div class="app-plan-summary"><div class="app-plan-title"><h2 id="overview-plan">我的套餐</h2><span class="app-status" id="overview-status">读取中</span></div><dl class="app-plan-grid"><div><dt>下次重置</dt><dd id="overview-reset">未知</dd></div><div><dt>套餐到期</dt><dd id="overview-expiry">未知</dd></div><div><dt>账号下载限速</dt><dd id="overview-down">未知</dd></div><div><dt>账号上传限速</dt><dd id="overview-up">未知</dd></div></dl><p>所有设备共享账号额度与限速。按开通日每月重置；永久余额不随月套餐到期。</p></div></div><p class="app-alert" hidden="" id="overview-error" role="status"></p><div class="app-overview-columns"><section class="app-panel"><div class="app-section-heading"><h2 class="app-section-title">我的设备 <small id="overview-device-count"></small></h2><a href="#/devices">管理全部</a></div><div class="app-device-list" id="overview-device-list"><p class="app-empty">正在读取设备</p></div><p class="app-footnote" id="overview-meter">连接状态以实际配置和采集时间为准。</p></section><div id="overview-usage-mount"><section class="panel usage-panel">
-<div class="section-heading"><div><h2>近 7 天用量</h2></div><span class="usage-note">HY2 节点计量，与云账单/原全机统计口径不同</span></div>
+<div class="section-heading"><div><h2>近 7 天用量</h2></div><span class="usage-note">原节点 HY2 用量；台湾节点另见服务器运行页</span></div>
 <div class="usage-legend"><span class="download-key">下载</span><span class="upload-key">上传</span></div>
 <div class="usage-chart-wrap"><svg aria-label="近 7 天已记录用量" id="usage-chart" role="img"></svg><p class="chart-empty" hidden="" id="usage-chart-empty"></p></div>
 <p class="usage-footnote" id="usage-started">历史记录从采集启用后开始，之前的用量无法追溯。</p>
@@ -66,13 +66,13 @@
 <p aria-live="polite" class="inline-status" id="admin-users-status" role="status"></p>
 </section></div></section>
 <section class="app-view" data-page="userdetail" hidden=""><nav aria-label="用户详情" class="app-target-tabs"><button aria-pressed="true" data-target-tab="quota" type="button">套餐与额度</button><button aria-pressed="false" data-target-tab="devices" type="button">设备</button><button aria-pressed="false" data-target-tab="usage" type="button">用量</button><button aria-pressed="false" data-target-tab="audit" type="button">操作记录</button></nav><div id="user-quota-mount"></div><div hidden="" id="user-devices-mount"></div><div class="app-panel" hidden="" id="user-audit-mount"><h2>额度变更记录</h2><div id="user-audit-log"></div></div></section>
-<section class="app-view" data-page="server" hidden=""><div id="server-mount"><div id="system-overview-mount"></div></div></section>
+<section class="app-view" data-page="server" hidden=""><section class="app-panel" id="managed-nodes" data-admin="" hidden=""><p>正在读取节点状态…</p></section><div id="server-mount"><div id="system-overview-mount"></div></div></section>
 <section class="app-view" data-page="audit" hidden=""><section class="app-panel"><h2>所选用户的额度变更</h2><p>记录调整套餐、续期、追加额度和月度周期事件。请通过上方管理对象选择器切换用户。</p><p class="app-footnote">仅展示现有后端已记录的额度审计，不包含浏览内容或访问网址。</p><div class="app-audit-mount" id="audit-log"></div></section></section>
 <div hidden="" id="controller-cache"><section aria-label="用量摘要" class="summary-grid">
 <article class="summary-card"><span>当前管理对象</span><strong id="target-name">—</strong><small id="target-username">—</small></article>
 <article class="summary-card"><span>已登记设备</span><strong id="device-count">—</strong><small>包含已停用设备</small></article>
-<article class="summary-card"><span>累计下载</span><strong id="download-total">—</strong><small>HY2 节点计量</small></article>
-<article class="summary-card"><span>累计上传</span><strong id="upload-total">—</strong><small>HY2 节点计量</small></article>
+<article class="summary-card"><span>累计下载</span><strong id="download-total">—</strong><small>原节点 HY2 计量</small></article>
+<article class="summary-card"><span>累计上传</span><strong id="upload-total">—</strong><small>原节点 HY2 计量</small></article>
 </section></div><footer class="app-footer"><span>wuyu · 设备独立管理</span><span>用量以服务端实际采集记录为准 · 北京时间</span></footer><div class="app-quick-entry">
 <button id="quick-launcher" class="app-quick-launcher" type="button" popovertarget="quick-panel" aria-controls="quick-panel" aria-expanded="false" aria-label="打开快捷入口" hidden><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg><span>快捷入口</span></button>
 <section id="quick-panel" class="app-quick-panel" popover="auto" aria-labelledby="quick-title">
@@ -140,5 +140,5 @@
 
 <div class="dialog-actions"><p class="form-error" id="account-form-error" role="alert"></p><button class="quiet-button" id="account-cancel" type="button">取消</button><button class="primary-button" id="account-save" type="submit">创建用户</button></div>
 </form>
-</dialog><script defer="True" src="/vpn/assets/view-model.js?v=20261028-smooth1"></script><script defer="True" src="/vpn/assets/shell.js?v=20261024-plan1"></script><script defer="True" src="/vpn/assets/portal.js?v=20261102-sync1"></script><script defer="True" src="/vpn/assets/quota.js?v=20261028-smooth1"></script><script defer="True" src="/vpn/assets/system.js?v=20261028-smooth1"></script></body>
+</dialog><script defer="True" src="/vpn/assets/view-model.js?v=20261028-smooth1"></script><script defer="True" src="/vpn/assets/shell.js?v=20261024-plan1"></script><script defer="True" src="/vpn/assets/portal.js?v=20261102-sync1"></script><script defer="True" src="/vpn/assets/quota.js?v=20261028-smooth1"></script><script defer="True" src="/vpn/assets/system.js?v=20261028-smooth1"></script><script defer="True" src="/vpn/assets/nodes.js?v=20261119-relay1"></script></body>
 </html>

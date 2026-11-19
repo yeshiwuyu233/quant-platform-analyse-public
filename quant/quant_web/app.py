@@ -31,6 +31,7 @@ import db_service as dbs
 import market_store
 import market_writer
 import refresh_market_cache as market_cache_refresher
+import today_update as pipeline_jobs
 from report_paths import glob_reports, resolve_report
 
 app = Flask(__name__)
@@ -1283,22 +1284,10 @@ def admin_upload():
 
         sheet_name = date_str[4:]  # "20260511" -> "0511"
 
-        status = _read_pipeline_status()
-        if status.get("running"):
-            return jsonify({"error": "上一份数据还在处理，请等完成后再上传"}), 409
-
-        master_path = os.path.join(_PROJECT_ROOT, "Whole Market.xlsx")
-
-        # 保存为临时 CSV，让后台流水线线程写入 Master（避免同步等待）
-        temp_csv = os.path.join(_PROJECT_ROOT, f".upload_temp_{date_str}.csv")
-        df.to_csv(temp_csv, index=False)
-
-        thread = threading.Thread(
-            target=_run_pipeline_for_date,
-            args=(date_str, temp_csv),
-            daemon=True,
-        )
-        thread.start()
+        try:
+            pipeline_jobs.submit_upload(date_str, df, _run_pipeline_for_date)
+        except pipeline_jobs.PipelineBusy as exc:
+            return jsonify({"error": str(exc)}), 409
 
         return jsonify({"ok": True, "message": f"已收到 {len(df)} 行数据，正在更新报告"})
 
@@ -1329,8 +1318,7 @@ def admin_upload():
 @app.route("/api/pipeline/status")
 @login_required
 def api_pipeline_status():
-    status = _read_pipeline_status()
-    return jsonify(status)
+    return jsonify(pipeline_jobs.pipeline_status())
 
 
 @app.route("/")
@@ -1716,6 +1704,9 @@ def _vpn_capability(user):
     return bool(json.loads(body)['enabled'])
 
 register_service_access(app, os.path.join(os.path.dirname(__file__), 'users.db'), _vpn_capability)
+
+
+pipeline_jobs.register_today_update(app, admin_required, _validate_csrf_token)
 
 
 if __name__ == "__main__":
