@@ -272,7 +272,7 @@
       top.append(open, status); card.append(top);
       const meta = node('div', 'device-meta');
       const meterTime = listMeter && listMeter.last_success ? dateTime(listMeter.last_success) : '暂无成功记录';
-      meta.append(node('span', '', `下载 ${formatBytes(device.download_bytes)}`), node('span', '', `上传 ${formatBytes(device.upload_bytes)}`), node('span', '', `最近活动 ${dateTime(device.last_seen)}`), node('span', 'meter-source', `HY2 节点计量 · 最近采集 ${meterTime}`));
+      meta.append(node('span', '', `下载 ${formatBytes(device.download_bytes)}`), node('span', '', `上传 ${formatBytes(device.upload_bytes)}`), node('span', '', `最近活动 ${dateTime(device.last_seen)}`), node('span', 'meter-source', `统一计量 · 最近采集 ${meterTime}`));
       card.append(meta);
       const bottom = node('div', 'device-bottom');
       const toggleLabel = node('label', 'toggle-label');
@@ -380,7 +380,7 @@
     if (detail.uri) return detail.uri;
     return detail.clash_url || detail.shadowrocket_url || detail.uri || '';
   }
-  function formatLabel(key) { return key === 'clash_url' ? 'Clash 订阅' : key === 'shadowrocket_url' ? 'Shadowrocket 自动更新' : '节点 URI'; }
+  function formatLabel(key) { return key === 'clash_url' ? 'Clash 订阅' : key === 'shadowrocket_url' ? 'Shadowrocket 订阅地址' : '单个节点（不会自动更新）'; }
   async function copyText(value, label, privateValue = true) {
     if (!value) return;
     try {
@@ -413,20 +413,23 @@
     remove.addEventListener('click', () => confirmAction('delete', detail)); $('detail-actions').append(remove);
 
     const preferred = recommendedURL(detail);
-    $('recommended-label').textContent = detail.client ? (clientNames[detail.client] || detail.client) : '可用配置';
-    $('copy-recommended').disabled = !preferred; $('copy-recommended').textContent = detail.client === 'uri' ? '复制推荐节点 URI' : '复制推荐订阅地址';
-    $('copy-recommended').onclick = () => copyText(preferred, '推荐配置');
+    $('recommended-label').textContent = detail.client === 'uri' ? '单个节点 · 不自动更新' : `${clientNames[detail.client] || '客户端'} 节点订阅`;
+    $('copy-recommended').disabled = !preferred; $('copy-recommended').textContent = detail.client === 'uri' ? '复制单个节点（不自动更新）' : '复制自动更新订阅';
+    $('copy-recommended').onclick = () => copyText(preferred, detail.client === 'uri' ? '单个节点' : '订阅地址');
+    if ($('import-status-note')) $('import-status-note').textContent = detail.client === 'uri'
+      ? '当前选择单个节点模式，刷新不会获得后续新节点。需要自动同步，请编辑设备，将客户端改为 Shadowrocket 或 Clash，再导入订阅。'
+      : `${detail.node_names?.length || 1} 个节点随订阅更新。Shadowrocket 导入后，首页应出现订阅分组；如果只有一个独立节点，请重新导入本页订阅。${detail.routing_note || ''}`;
     $('format-switch').replaceChildren();
-    const formats = [['clash_url', detail.clash_url], ['shadowrocket_url', detail.shadowrocket_url], ['uri', detail.uri]];
+    const formats = [['clash_url', detail.clash_url], ['shadowrocket_url', detail.shadowrocket_url]];
     formats.forEach(([key, value]) => {
       if (!value) return;
       const button = node('button', `quiet-button${((detail.client === 'clash' && key === 'clash_url') || (detail.client === 'shadowrocket' && key === 'shadowrocket_url') || (detail.client === 'uri' && key === 'uri')) ? ' recommended-format' : ''}`, `复制 ${formatLabel(key)}`);
       button.type = 'button'; button.addEventListener('click', () => copyText(value, formatLabel(key))); $('format-switch').append(button);
     });
     const clashLink = detail.clash_url ? `clash://install-config?url=${encodeURIComponent(detail.clash_url)}` : '';
-    const shadowrocketLink = detail.shadowrocket_url ? `shadowrocket://add/${encodeURIComponent(detail.shadowrocket_url)}` : '';
+    const shadowrocketLink = detail.shadowrocket_url ? `shadowrocket://add/${detail.shadowrocket_url}` : '';
     const rulesURL = detail.shadowrocket_rules_url || `${location.origin}/vpn/rules/unified.conf`;
-    const rulesLink = `shadowrocket://config/add/${encodeURIComponent(rulesURL)}`;
+    const rulesLink = `shadowrocket://config/add/${rulesURL}`;
     setExternalLink('clash-deeplink', clashLink); setExternalLink('shadowrocket-deeplink', shadowrocketLink);
     setExternalLink('shadowrocket-rules-deeplink', rulesLink);
     $('copy-rules-url').onclick = () => copyText(rulesURL, '分流规则链接', false);
@@ -434,6 +437,10 @@
     $('manual-copy').value = ''; $('manual-copy').hidden = true;
     setStatus('copy-status', ''); setStatus('detail-status', '');
     const qr = $('device-qr');
+    if ($('qr-title')) $('qr-title').textContent = detail.client === 'uri' ? '单个节点二维码' : '自动更新订阅二维码';
+    if ($('qr-help')) $('qr-help').textContent = detail.client === 'uri'
+      ? '此二维码只包含一个节点，不会同步新增节点。'
+      : '用对应客户端扫码添加订阅。手机查看本页时，直接点击上方导入按钮即可。';
     if (detail.qr_url) { qr.referrerPolicy = 'no-referrer'; qr.alt = `${detail.remark || '设备'}的专属配置二维码`; qr.src = detail.qr_url; qr.hidden = false; }
     else { qr.removeAttribute('src'); qr.hidden = true; }
     $('danger-actions').replaceChildren();
